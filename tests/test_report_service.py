@@ -9,6 +9,7 @@ from app.services.report_service import (
     _apply_inclusion,
     _collect_children,
     _compute_boundary_statuses,
+    _compute_rework,
     _compute_role_assignments,
     _compute_status_timeline,
     _extract_relation_target_id,
@@ -429,3 +430,74 @@ def test_compute_boundary_statuses_empty():
     at_start, at_end = _compute_boundary_statuses([], start, end)
     assert at_start is None
     assert at_end is None
+
+
+# ---------------------------------------------------------------------------
+# Rework detection
+# ---------------------------------------------------------------------------
+
+_REWORK_CANONICAL = {
+    "New": "Backlog",
+    "Active": "Development Active",
+    "In Review": "QA Active",
+    "Closed": "Delivered",
+}
+
+
+def test_compute_rework_no_rework():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Closed"}},
+    ]
+    has_rework, reasons = _compute_rework(revs, _REWORK_CANONICAL, [])
+    assert has_rework is False
+    assert reasons == []
+
+
+def test_compute_rework_linked_bug():
+    revs = [{"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}}]
+    has_rework, reasons = _compute_rework(revs, _REWORK_CANONICAL, [100, 101])
+    assert has_rework is True
+    assert "linked_bug" in reasons
+
+
+def test_compute_rework_returned_to_active_after_qa():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "In Review"}},
+        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Active"}},
+    ]
+    has_rework, reasons = _compute_rework(revs, _REWORK_CANONICAL, [])
+    assert has_rework is True
+    assert "returned_to_active" in reasons
+
+
+def test_compute_rework_returned_to_active_after_delivered():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "Closed"}},
+        {"fields": {"System.ChangedDate": "2025-01-20T10:00:00Z", "System.State": "Active"}},
+    ]
+    has_rework, reasons = _compute_rework(revs, _REWORK_CANONICAL, [])
+    assert has_rework is True
+    assert "returned_to_active" in reasons
+
+
+def test_compute_rework_returned_to_backlog():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "In Review"}},
+        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "New"}},
+    ]
+    has_rework, reasons = _compute_rework(revs, _REWORK_CANONICAL, [])
+    assert has_rework is True
+    assert "returned_to_active" in reasons
+
+
+def test_compute_rework_never_reached_qa_or_delivered():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "New"}},
+    ]
+    has_rework, reasons = _compute_rework(revs, _REWORK_CANONICAL, [])
+    assert has_rework is False
+    assert "returned_to_active" not in reasons

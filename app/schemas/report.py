@@ -33,6 +33,14 @@ class DeliverableRow(BaseModel):
     developer: str | None = None
     qa: str | None = None
     release_manager: str | None = None
+    has_rework: bool = Field(
+        default=False,
+        description="True if the item has a linked bug or was returned to active after reaching QA/Delivered.",
+    )
+    rework_reasons: list[str] = Field(
+        default_factory=list,
+        description="Reasons rework was flagged: 'linked_bug', 'returned_to_active'.",
+    )
 
 
 class ReportResponse(BaseModel):

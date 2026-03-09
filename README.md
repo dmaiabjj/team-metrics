@@ -92,7 +92,9 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "child_task_ids": [12347, 12348],
       "developer": "Alice Smith",
       "qa": "Bob Jones",
-      "release_manager": "Carol White"
+      "release_manager": "Carol White",
+      "has_rework": true,
+      "rework_reasons": ["linked_bug"]
     },
     {
       "id": 12349,
@@ -112,7 +114,9 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "child_task_ids": [],
       "developer": "Alice Smith",
       "qa": null,
-      "release_manager": null
+      "release_manager": null,
+      "has_rework": false,
+      "rework_reasons": []
     }
   ]
 }
@@ -178,6 +182,8 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           ],
           "parent_epic_title": null,
           "parent_feature_title": "Payment MVP",
+          "has_rework": true,
+          "rework_reasons": ["linked_bug"],
           "child_bug_ids": [12346],
           "child_task_ids": [12347, 12348],
           "developer": "Alice Smith",
@@ -204,6 +210,8 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           ],
           "parent_epic_title": null,
           "parent_feature_title": "Refunds",
+          "has_rework": false,
+          "rework_reasons": [],
           "child_bug_ids": [],
           "child_task_ids": [12401],
           "developer": "Dave Brown",
@@ -256,6 +264,22 @@ Each deliverable includes three role fields computed from revision history:
 | `release_manager` | Person assigned for the longest time during **Delivered** states |
 
 Values are `null` when no one was assigned during the corresponding phase.
+
+---
+
+## Rework
+
+Each deliverable includes rework flags derived from revision history and links:
+
+| Field | Description |
+|-------|-------------|
+| `has_rework` | `true` if the item has rework (see below) |
+| `rework_reasons` | List of reasons: `linked_bug`, `returned_to_active` |
+
+**Rework is set when either:**
+
+1. **Linked bug** – The work item has one or more child bugs (`child_bug_ids` non-empty).
+2. **Returned to active** – The item reached **QA Active** or **Delivered** in its revision history and was later moved back to **Development Active** or **Backlog** (e.g. sent back from QA or reopened after close).
 
 ---
 

@@ -285,6 +285,37 @@ def _compute_status_timeline(
     return timeline
 
 
+def _compute_rework(
+    revisions: list[dict],
+    real_to_canonical: dict[str, str],
+    child_bug_ids: list[int],
+) -> tuple[bool, list[str]]:
+    """Determine if the work item has rework: linked bug(s) or returned to active after QA/Delivered.
+
+    Returns (has_rework, rework_reasons). Reasons are 'linked_bug' and/or 'returned_to_active'.
+    """
+    reasons: list[str] = []
+    if child_bug_ids:
+        reasons.append("linked_bug")
+
+    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    sorted_revs = sorted(
+        (r for r in revisions if _parse_revision_date(r) is not None),
+        key=lambda r: _parse_revision_date(r) or _min_dt,
+    )
+    seen_qa_or_delivered = False
+    for rev in sorted_revs:
+        state = _revision_state(rev)
+        canon = real_to_canonical.get(state)
+        if canon in ("QA Active", "Delivered"):
+            seen_qa_or_delivered = True
+        if seen_qa_or_delivered and canon in ("Development Active", "Backlog"):
+            reasons.append("returned_to_active")
+            break
+
+    return bool(reasons), reasons
+
+
 def _compute_boundary_statuses(
     revisions: list[dict],
     start_dt: datetime,
@@ -468,9 +499,6 @@ async def run_report(
     semaphore = asyncio.Semaphore(settings.revision_concurrency)
 
     async def _check_inclusion(wid: int) -> tuple[int, list[dict]] | None:
-        if(wid == 4280):
-            logger.exception("Failed to check revisions for work item %d", wid)
-
         async with semaphore:
             try:
                 revs = await client.get_revisions(team.project, wid)
@@ -516,6 +544,7 @@ async def run_report(
         developer, qa, release_manager = _compute_role_assignments(revs, real_to_canonical)
         status_timeline = _compute_status_timeline(revs, real_to_canonical)
         status_at_start, status_at_end = _compute_boundary_statuses(revs, start_dt, end_dt)
+        has_rework, rework_reasons = _compute_rework(revs, real_to_canonical, child_bug_ids)
 
         deliverables.append(
             DeliverableRow(
@@ -535,6 +564,8 @@ async def run_report(
                 developer=developer,
                 qa=qa,
                 release_manager=release_manager,
+                has_rework=has_rework,
+                rework_reasons=rework_reasons,
             )
         )
 
