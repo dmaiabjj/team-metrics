@@ -51,6 +51,8 @@ flowchart LR
     Children --> AzureDevOps
 ```
 
+
+
 ### Caching Layer
 
 ```mermaid
@@ -76,12 +78,16 @@ flowchart TD
     InvalidateTeam["DELETE /cache/team_id"] --> ClearTeam["Clear L1 for Team"]
 ```
 
+
+
 The two cache layers target different bottlenecks:
 
-| Layer | Key | Scope | Effect |
-|-------|-----|-------|--------|
-| L1 (Report) | `(team_id, start_date, end_date)` | Full response | Repeated identical queries: 0 API calls |
-| L2 (Work Item) | `(project, work_item_id)` | Individual items | Shared epics/features fetched once across deliverables |
+
+| Layer          | Key                               | Scope            | Effect                                                 |
+| -------------- | --------------------------------- | ---------------- | ------------------------------------------------------ |
+| L1 (Report)    | `(team_id, start_date, end_date)` | Full response    | Repeated identical queries: 0 API calls                |
+| L2 (Work Item) | `(project, work_item_id)`         | Individual items | Shared epics/features fetched once across deliverables |
+
 
 Both are in-memory, persist until process restart, and support manual invalidation via the `/cache` endpoints.
 
@@ -91,43 +97,69 @@ Both are in-memory, persist until process restart, and support manual invalidati
 
 ### Health
 
-**Request**
-
 ```
 GET /health
 ```
 
-No parameters.
+No parameters. Returns `{"status": "ok"}`. Pass `?deep=true` to verify Azure DevOps connectivity.
+
+---
+
+### 1. Dashboard
+
+Cross-team KPI averages and per-team breakdown.
+
+```
+GET /dashboard?start_date=2025-01-01&end_date=2025-01-31
+```
+
+
+| Parameter    | Type | Required | Description           |
+| ------------ | ---- | -------- | --------------------- |
+| `start_date` | date | Yes      | Start of period (ISO) |
+| `end_date`   | date | Yes      | End of period (ISO)   |
+
 
 **Response** `200 OK`
 
 ```json
 {
-  "status": "ok"
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "averages": [
+    {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
+    {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5}
+  ],
+  "teams": [
+    {
+      "team_id": "game-services",
+      "kpis": [
+        {"name": "rework_rate", "value": 0.10, "display": "10.0%", "rag": "green", "items_with_rework": 5, "items_reached_qa": 50, "items_bounced_back": 3, "total_bugs": 8, "thresholds": {"green": "<= 10%", "amber": "10-15%", "red": "> 15%"}},
+        {"name": "delivery_predictability", "value": 0.90, "display": "90.0%", "rag": "green", "items_committed": 50, "items_deployed": 45, "items_started_in_period": 35, "items_spillover": 15, "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}}
+      ]
+    }
+  ],
+  "errors": []
 }
 ```
 
 ---
 
-### Report (single team)
+### 2. Team KPIs
 
-**Request**
-
-```
-GET /report?team_id={team_id}&start_date={start_date}&end_date={end_date}
-```
-
-| Parameter    | Type | Required | Description                          |
-|-------------|------|----------|--------------------------------------|
-| `team_id`   | string | Yes    | Team slug (e.g. `game-services`)      |
-| `start_date`| date   | Yes    | Start of period, ISO (e.g. `2025-01-01`) |
-| `end_date`  | date   | Yes    | End of period, ISO (e.g. `2025-01-31`)   |
-
-**Example request**
+All KPIs for one team.
 
 ```
-GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31
+GET /teams/{team_id}/kpis?start_date=2025-01-01&end_date=2025-01-31
 ```
+
+
+| Parameter    | Type | Required | Description                      |
+| ------------ | ---- | -------- | -------------------------------- |
+| `team_id`    | path | Yes      | Team slug (e.g. `game-services`) |
+| `start_date` | date | Yes      | Start of period (ISO)            |
+| `end_date`   | date | Yes      | End of period (ISO)              |
+
 
 **Response** `200 OK`
 
@@ -136,12 +168,138 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
   "team_id": "game-services",
   "start_date": "2025-01-01",
   "end_date": "2025-01-31",
-  "deliverables": [
+  "kpis": [
+    {"name": "rework_rate", "value": 0.10, "display": "10.0%", "rag": "green", "items_with_rework": 5, "items_reached_qa": 50, "items_bounced_back": 3, "total_bugs": 8, "thresholds": {"green": "<= 10%", "amber": "10-15%", "red": "> 15%"}},
+    {"name": "delivery_predictability", "value": 0.90, "display": "90.0%", "rag": "green", "items_committed": 50, "items_deployed": 45, "items_started_in_period": 35, "items_spillover": 15, "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}}
+  ]
+}
+```
+
+---
+
+### 3. Team KPI Detail
+
+Single KPI with its breakdown metrics and all involved work items for one team.
+
+```
+GET /teams/{team_id}/kpis/{kpi_name}?start_date=2025-01-01&end_date=2025-01-31
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `team_id` | path | Yes | Team slug |
+| `kpi_name` | path | Yes | `rework-rate` or `delivery-predictability` |
+| `start_date` | date | Yes | Start of period (ISO) |
+| `end_date` | date | Yes | End of period (ISO) |
+
+**Response** `200 OK` (example: rework-rate)
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "kpi": {
+    "name": "rework_rate",
+    "value": 0.10,
+    "display": "10.0%",
+    "rag": "green",
+    "items_with_rework": 5,
+    "items_reached_qa": 50,
+    "items_bounced_back": 3,
+    "total_bugs": 8,
+    "thresholds": {"green": "<= 10%", "amber": "10-15%", "red": "> 15%"}
+  },
+  "total": 50,
+  "items": [
+    {"id": 12345, "work_item_type": "Story", "title": "Implement checkout flow", "...": "..."},
+    {"id": 12349, "work_item_type": "Task", "title": "Add unit tests", "...": "..."}
+  ]
+}
+```
+
+The `items` list is the deduplicated union of all work items across every metric of the KPI (e.g. for rework-rate: items that reached QA, had rework, bounced back, or have bugs).
+
+---
+
+### 4. KPI Drilldown
+
+Work items behind a specific KPI metric. Supports `skip`/`limit` pagination.
+
+```
+GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&end_date=2025-01-31
+```
+
+
+| Parameter    | Type | Required | Description                                |
+| ------------ | ---- | -------- | ------------------------------------------ |
+| `team_id`    | path | Yes      | Team slug                                  |
+| `kpi_name`   | path | Yes      | `rework-rate` or `delivery-predictability` |
+| `metric`     | path | Yes      | Metric to drill into (see table below)     |
+| `start_date` | date | Yes      | Start of period (ISO)                      |
+| `end_date`   | date | Yes      | End of period (ISO)                        |
+| `skip`       | int  | No       | Pagination offset (default 0)              |
+| `limit`      | int  | No       | Max items (default 100, max 500)           |
+
+
+**Available metrics per KPI:**
+
+
+| KPI                       | Valid metrics                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `rework-rate`             | `items_reached_qa`, `items_with_rework`, `items_bounced_back`, `items_with_bugs`  |
+| `delivery-predictability` | `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover` |
+
+
+**Response** `200 OK`
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "kpi_name": "rework-rate",
+  "metric": "items_with_rework",
+  "total": 5,
+  "items": [
+    {"id": 12345, "work_item_type": "Story", "title": "Implement checkout flow", "...": "..."}
+  ]
+}
+```
+
+---
+
+### 5. Work Items
+
+Paginated list of work items (deliverables) for one team. Replaces the former `/report` endpoint.
+
+```
+GET /teams/{team_id}/work-items?start_date=2025-01-01&end_date=2025-01-31
+```
+
+
+| Parameter    | Type | Required | Description                      |
+| ------------ | ---- | -------- | -------------------------------- |
+| `team_id`    | path | Yes      | Team slug                        |
+| `start_date` | date | Yes      | Start of period (ISO)            |
+| `end_date`   | date | Yes      | End of period (ISO)              |
+| `skip`       | int  | No       | Pagination offset (default 0)    |
+| `limit`      | int  | No       | Max items (default 100, max 500) |
+
+
+**Response** `200 OK`
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "total": 42,
+  "items": [
     {
       "id": 12345,
       "work_item_type": "Story",
       "title": "Implement checkout flow",
-      "description": "<div>Build the full checkout flow for payment processing.</div>",
       "state": "Closed",
       "canonical_status": "Delivered",
       "date_created": "2024-12-10T09:00:00Z",
@@ -149,200 +307,26 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "finish_date": "2025-01-20T09:00:00Z",
       "status_at_start": "Active",
       "status_at_end": "Closed",
-      "status_timeline": [
-        {"date": "2024-12-15T10:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Alice Smith"},
-        {"date": "2025-01-10T14:30:00Z", "state": "In QA", "canonical_status": "QA Active", "assigned_to": "Bob Jones"},
-        {"date": "2025-01-20T09:00:00Z", "state": "Closed", "canonical_status": "Delivered", "assigned_to": "Carol White"}
-      ],
-      "parent_epic": {"id": 5000, "title": "Post-Mortem Fixes", "state": "Active"},
-      "parent_feature": {"id": 5010, "title": "Payment MVP", "state": "Active"},
-      "child_bugs": [{"id": 12346, "title": "Null pointer on checkout", "state": "Closed"}],
-      "child_tasks": [{"id": 12347, "title": "DB migration", "state": "Closed"}, {"id": 12348, "title": "API contract", "state": "Closed"}],
-      "developer": "Alice Smith",
-      "qa": "Bob Jones",
-      "release_manager": "Carol White",
       "has_rework": true,
       "is_spillover": false,
       "bounces": 0,
-      "bounce_details": [],
       "is_technical_debt": false,
       "is_post_mortem": true,
       "post_mortem_sla_met": true,
       "delivery_days": 5.38,
       "tags": ["Code Defect"]
-    },
-    {
-      "id": 12349,
-      "work_item_type": "Task",
-      "title": "Add unit tests",
-      "description": null,
-      "state": "In Progress",
-      "canonical_status": "Development Active",
-      "date_created": "2024-12-18T09:00:00Z",
-      "start_date": "2024-12-20T08:00:00Z",
-      "finish_date": null,
-      "status_at_start": "In QA",
-      "status_at_end": "Active",
-      "status_timeline": [
-        {"date": "2024-12-20T08:00:00Z", "state": "In QA", "canonical_status": "QA Active", "assigned_to": "Bob Jones"},
-        {"date": "2025-01-05T08:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Alice Smith"}
-      ],
-      "parent_epic": null,
-      "parent_feature": null,
-      "child_bugs": [],
-      "child_tasks": [],
-      "developer": "Alice Smith",
-      "qa": "Bob Jones",
-      "release_manager": null,
-      "has_rework": true,
-      "is_spillover": true,
-      "bounces": 1,
-      "bounce_details": [
-        {"from_revision": 7, "to_revision": 8, "from_state": "In QA", "to_state": "Active", "date": "2025-01-05T08:00:00Z"}
-      ],
-      "is_technical_debt": false,
-      "is_post_mortem": false,
-      "post_mortem_sla_met": null,
-      "delivery_days": null,
-      "tags": ["Scope / Requirements", "Spillover"]
     }
   ]
 }
 ```
 
-**Error responses**
+**Common error responses (all endpoints):**
 
-- `400` – `start_date` is after `end_date`
-  ```json
-  { "detail": "start_date must be <= end_date" }
-  ```
-- `404` – Unknown `team_id`
-  ```json
-  { "detail": "Unknown team_id: foo. Known: ['game-services', 'domain-tooling-services', ...]" }
-  ```
-- `503` – Azure DevOps not configured (missing org or PAT)
-  ```json
-  { "detail": "Azure DevOps not configured: set AZURE_DEVOPS_ORG and AZURE_DEVOPS_PAT" }
-  ```
-
----
-
-### Report (multiple teams)
-
-**Request**
-
-```
-GET /report/multi?team_ids={team_ids}&start_date={start_date}&end_date={end_date}
-```
-
-| Parameter    | Type | Required | Description                                   |
-|-------------|------|----------|-----------------------------------------------|
-| `team_ids`  | string | Yes    | Comma-separated team slugs                     |
-| `start_date`| date   | Yes    | Start of period, ISO (e.g. `2025-01-01`)      |
-| `end_date`  | date   | Yes    | End of period, ISO (e.g. `2025-01-31`)        |
-
-**Example request**
-
-```
-GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&start_date=2025-01-01&end_date=2025-01-31
-```
-
-**Response** `200 OK`
-
-```json
-{
-  "teams": [
-    {
-      "team_id": "game-services",
-      "deliverables": [
-        {
-          "id": 12345,
-          "work_item_type": "Story",
-          "title": "Implement checkout flow",
-          "description": "<div>Build the full checkout flow.</div>",
-          "state": "Closed",
-          "canonical_status": "Delivered",
-          "date_created": "2024-12-10T09:00:00Z",
-          "start_date": "2024-12-15T10:00:00Z",
-          "finish_date": "2025-01-20T09:00:00Z",
-          "status_at_start": "Active",
-          "status_at_end": "Closed",
-          "status_timeline": [
-            {"date": "2024-12-15T10:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Alice Smith"},
-            {"date": "2025-01-20T09:00:00Z", "state": "Closed", "canonical_status": "Delivered", "assigned_to": "Carol White"}
-          ],
-          "parent_epic": null,
-          "parent_feature": {"id": 5010, "title": "Payment MVP", "state": "Active"},
-          "has_rework": true,
-          "is_spillover": false,
-          "bounces": 0,
-          "bounce_details": [],
-          "is_technical_debt": false,
-          "is_post_mortem": false,
-          "post_mortem_sla_met": null,
-          "delivery_days": 36.96,
-          "tags": ["Code Defect"],
-          "child_bugs": [{"id": 12346, "title": "Null pointer on checkout", "state": "Closed"}],
-          "child_tasks": [{"id": 12347, "title": "DB migration", "state": "Closed"}, {"id": 12348, "title": "API contract", "state": "Closed"}],
-          "developer": "Alice Smith",
-          "qa": "Bob Jones",
-          "release_manager": "Carol White"
-        }
-      ]
-    },
-    {
-      "team_id": "payment-services",
-      "deliverables": [
-        {
-          "id": 12400,
-          "work_item_type": "Story",
-          "title": "Refund API",
-          "description": "Implement refund processing via API.",
-          "state": "In Testing",
-          "canonical_status": "QA Active",
-          "date_created": "2024-12-18T09:00:00Z",
-          "start_date": "2024-12-20T11:00:00Z",
-          "finish_date": null,
-          "status_at_start": "Active",
-          "status_at_end": "In QA",
-          "status_timeline": [
-            {"date": "2024-12-20T11:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Dave Brown"},
-            {"date": "2025-01-15T16:00:00Z", "state": "In QA", "canonical_status": "QA Active", "assigned_to": "Eve Green"}
-          ],
-          "parent_epic": {"id": 9001, "title": "Tech Debt Q1", "state": "Active"},
-          "parent_feature": {"id": 9010, "title": "Refunds", "state": "Active"},
-          "has_rework": false,
-          "is_spillover": true,
-          "bounces": 0,
-          "bounce_details": [],
-          "is_technical_debt": true,
-          "is_post_mortem": false,
-          "post_mortem_sla_met": null,
-          "delivery_days": null,
-          "tags": ["Spillover"],
-          "child_bugs": [],
-          "child_tasks": [{"id": 12401, "title": "Write integration tests", "state": "Active"}],
-          "developer": "Dave Brown",
-          "qa": "Eve Green",
-          "release_manager": null
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Error responses**
-
-- `400` – `start_date` is after `end_date`
-  ```json
-  { "detail": "start_date must be <= end_date" }
-  ```
-- `404` – One or more unknown `team_id`s
-  ```json
-  { "detail": "Unknown team_id(s): ['foo']" }
-  ```
-- `503` – Azure DevOps not configured (same as single-team report)
+- `400` -- `start_date` after `end_date` or exceeds max range
+- `404` -- Unknown `team_id`
+- `422` -- Invalid KPI name or metric
+- `503` -- Azure DevOps not configured
+- `504` -- Report generation timed out
 
 ---
 
@@ -350,12 +334,14 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
 
 Each deliverable includes:
 
-| Field | Description |
-|-------|-------------|
-| `description` | Work item description (HTML or plain text as stored in Azure DevOps) |
-| `status_at_start` | State of the item at the beginning of the queried period (`null` if created after) |
-| `status_at_end` | State of the item at the end of the queried period |
+
+| Field             | Description                                                                                               |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `description`     | Work item description (HTML or plain text as stored in Azure DevOps)                                      |
+| `status_at_start` | State of the item at the beginning of the queried period (`null` if created after)                        |
+| `status_at_end`   | State of the item at the end of the queried period                                                        |
 | `status_timeline` | Chronological list of state transitions, each with `date`, `state`, `canonical_status`, and `assigned_to` |
+
 
 The timeline only includes revisions where the state actually changed (consecutive duplicates are skipped).
 
@@ -365,11 +351,13 @@ The timeline only includes revisions where the state actually changed (consecuti
 
 Each deliverable includes three role fields computed from revision history:
 
-| Field | Logic |
-|-------|-------|
-| `developer` | Person assigned for the longest time during **Development Active** states |
-| `qa` | Person assigned for the longest time during **QA Active** states |
-| `release_manager` | Person assigned for the longest time during **Delivered** states |
+
+| Field             | Logic                                                                     |
+| ----------------- | ------------------------------------------------------------------------- |
+| `developer`       | Person assigned for the longest time during **Development Active** states |
+| `qa`              | Person assigned for the longest time during **QA Active** states          |
+| `release_manager` | Person assigned for the longest time during **Delivered** states          |
+
 
 Values are `null` when no one was assigned during the corresponding phase.
 
@@ -379,21 +367,25 @@ Values are `null` when no one was assigned during the corresponding phase.
 
 Each deliverable includes tags, boolean flags, and bounce tracking:
 
-| Field | Description |
-|-------|-------------|
-| `has_rework` | `true` if any rework tag is present (`Code Defect` or `Scope / Requirements`) |
-| `is_spillover` | `true` if the item was already in dev or QA at the start of the period |
-| `bounces` | Number of times the item went back from QA/Delivered to active/backlog |
+
+| Field            | Description                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| `has_rework`     | `true` if any rework tag is present (`Code Defect` or `Scope / Requirements`)               |
+| `is_spillover`   | `true` if the item was already in dev or QA at the start of the period                      |
+| `bounces`        | Number of times the item went back from QA/Delivered to active/backlog                      |
 | `bounce_details` | List of bounce events with `from_revision`, `to_revision`, `from_state`, `to_state`, `date` |
-| `tags` | List of tags assigned to the deliverable (see below) |
+| `tags`           | List of tags assigned to the deliverable (see below)                                        |
+
 
 **Available tags:**
 
-| Tag | Condition |
-|-----|-----------|
-| `Code Defect` | The work item has one or more linked child bugs (`child_bugs` non-empty). |
-| `Scope / Requirements` | The item bounced back at least once (`bounces > 0`). |
-| `Spillover` | The item was in **Development Active** or **QA Active** at the start of the queried period (`status_at_start`). |
+
+| Tag                    | Condition                                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Code Defect`          | The work item has one or more linked child bugs (`child_bugs` non-empty).                                       |
+| `Scope / Requirements` | The item bounced back at least once (`bounces > 0`).                                                            |
+| `Spillover`            | The item was in **Development Active** or **QA Active** at the start of the queried period (`status_at_start`). |
+
 
 A deliverable can have multiple tags simultaneously (e.g. both `Code Defect` and `Spillover`).
 
@@ -403,16 +395,18 @@ A deliverable can have multiple tags simultaneously (e.g. both `Code Defect` and
 
 Each deliverable is checked against per-team epic ID lists from `teams.yaml`:
 
-| Field | Description |
-|-------|-------------|
-| `parent_epic` | Parent Epic as `{id, title, state}` object (null if none) |
-| `parent_feature` | Parent Feature as `{id, title, state}` object (null if none) |
-| `child_bugs` | List of child bugs as `{id, title, state}` objects |
-| `child_tasks` | List of child tasks as `{id, title, state}` objects |
-| `is_technical_debt` | `true` if `parent_epic.id` is in the team's `tech_debt_epic_ids` list |
-| `is_post_mortem` | `true` if `parent_epic.id` is in the team's `post_mortem_epic_ids` list |
+
+| Field                 | Description                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `parent_epic`         | Parent Epic as `{id, title, state}` object (null if none)                                                              |
+| `parent_feature`      | Parent Feature as `{id, title, state}` object (null if none)                                                           |
+| `child_bugs`          | List of child bugs as `{id, title, state}` objects                                                                     |
+| `child_tasks`         | List of child tasks as `{id, title, state}` objects                                                                    |
+| `is_technical_debt`   | `true` if `parent_epic.id` is in the team's `tech_debt_epic_ids` list                                                  |
+| `is_post_mortem`      | `true` if `parent_epic.id` is in the team's `post_mortem_epic_ids` list                                                |
 | `post_mortem_sla_met` | `true` if `delivery_days <= post_mortem_sla_weeks * 7`. `false` if not yet delivered. `null` if not a post-mortem item |
-| `delivery_days` | Calendar days from work item creation (first revision) to first Delivered state. `null` if not yet delivered |
+| `delivery_days`       | Calendar days from work item creation (first revision) to first Delivered state. `null` if not yet delivered           |
+
 
 **YAML config per team:**
 
@@ -492,7 +486,7 @@ GET /cache/stats
 
 ## Authentication
 
-Set the `API_KEY` environment variable to enable API key authentication. When set, all `/report` and `/cache` endpoints require the `X-API-Key` header. The `/health` endpoint remains open.
+Set the `API_KEY` environment variable to enable API key authentication. When set, all `/dashboard`, `/teams`, and `/cache` endpoints require the `X-API-Key` header. The `/health` endpoint remains open.
 
 ```bash
 # .env
@@ -505,12 +499,17 @@ When `API_KEY` is empty or unset, authentication is disabled (open access).
 
 ## Rate Limiting
 
-Report endpoints are rate-limited per client IP:
+Endpoints are rate-limited per client IP:
 
-| Endpoint | Limit |
-|----------|-------|
-| `GET /report` | 30 requests/minute |
-| `GET /report/multi` | 10 requests/minute |
+
+| Endpoint                                                  | Limit              |
+| --------------------------------------------------------- | ------------------ |
+| `GET /dashboard`                                          | 10 requests/minute |
+| `GET /teams/{team_id}/work-items`                         | 30 requests/minute |
+| `GET /teams/{team_id}/kpis`                               | 30 requests/minute |
+| `GET /teams/{team_id}/kpis/{kpi_name}`                    | 30 requests/minute |
+| `GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}` | 30 requests/minute |
+
 
 Exceeding the limit returns `429 Too Many Requests`.
 
@@ -518,129 +517,46 @@ Exceeding the limit returns `429 Too Many Requests`.
 
 ## Pagination
 
-Report endpoints support `skip` and `limit` query parameters:
+Work-items and drilldown endpoints support `skip` and `limit` query parameters:
 
-| Parameter | Default | Range | Description |
-|-----------|---------|-------|-------------|
-| `skip` | 0 | >= 0 | Number of deliverables to skip |
-| `limit` | 100 | 1-500 | Max deliverables to return |
+
+| Parameter | Default | Range | Description             |
+| --------- | ------- | ----- | ----------------------- |
+| `skip`    | 0       | >= 0  | Number of items to skip |
+| `limit`   | 100     | 1-500 | Max items to return     |
+
 
 The response includes a `total` field with the full count before pagination.
 
 ```
-GET /report?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&skip=0&limit=50
+GET /teams/game-services/work-items?start_date=2025-01-01&end_date=2025-01-31&skip=0&limit=50
 ```
 
 ---
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AZURE_DEVOPS_ORG` | | Azure DevOps organization name |
-| `AZURE_DEVOPS_PAT` | | Personal access token |
-| `API_KEY` | | API key for authentication (empty = disabled) |
-| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
-| `REPORT_TIMEOUT` | `300` | Max seconds for report generation |
-| `REPORT_CACHE_MAX` | `256` | Max L1 cache entries |
-| `WI_CACHE_MAX` | `4096` | Max L2 cache entries |
-| `REVISION_CONCURRENCY` | `20` | Max parallel revision fetches |
-| `HTTP_TIMEOUT` | `60` | Seconds per HTTP request |
-| `HTTP_POOL_SIZE` | `20` | Connection pool size |
-| `MAX_DATE_RANGE_DAYS` | `365` | Max allowed date range |
+
+| Variable               | Default | Description                                   |
+| ---------------------- | ------- | --------------------------------------------- |
+| `AZURE_DEVOPS_ORG`     |         | Azure DevOps organization name                |
+| `AZURE_DEVOPS_PAT`     |         | Personal access token                         |
+| `API_KEY`              |         | API key for authentication (empty = disabled) |
+| `LOG_LEVEL`            | `INFO`  | Logging level (DEBUG, INFO, WARNING, ERROR)   |
+| `REPORT_TIMEOUT`       | `300`   | Max seconds for report generation             |
+| `REPORT_CACHE_MAX`     | `256`   | Max L1 cache entries                          |
+| `WI_CACHE_MAX`         | `4096`  | Max L2 cache entries                          |
+| `REVISION_CONCURRENCY` | `20`    | Max parallel revision fetches                 |
+| `HTTP_TIMEOUT`         | `60`    | Seconds per HTTP request                      |
+| `HTTP_POOL_SIZE`       | `20`    | Connection pool size                          |
+| `MAX_DATE_RANGE_DAYS`  | `365`   | Max allowed date range                        |
+
 
 ---
 
-## KPIs
+## KPI Reference
 
-KPIs are computed from the existing report data (no additional Azure DevOps calls). Thresholds are configurable in `app/config/kpis.yaml`.
-
-### `GET /kpi` -- single team
-
-```
-GET /kpi?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31
-```
-
-Response:
-
-```json
-{
-  "team_id": "game-services",
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "kpis": [
-    {
-      "name": "rework_rate",
-      "value": 0.10,
-      "display": "10.0%",
-      "rag": "green",
-      "items_with_rework": 5,
-      "items_reached_qa": 50,
-      "items_bounced_back": 3,
-      "total_bugs": 8,
-      "thresholds": {"green": "<= 10%", "amber": "10%-15%", "red": "> 15%"}
-    },
-    {
-      "name": "delivery_predictability",
-      "value": 0.90,
-      "display": "90.0%",
-      "rag": "green",
-      "items_committed": 50,
-      "items_deployed": 45,
-      "items_started_in_period": 35,
-      "items_spillover": 15,
-      "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}
-    }
-  ]
-}
-```
-
-### `GET /kpi/summary` -- average across all teams
-
-```
-GET /kpi/summary?start_date=2025-01-01&end_date=2025-01-31
-```
-
-Returns per-KPI averages across all configured teams, plus each team's individual breakdown.
-
-Response:
-
-```json
-{
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "averages": [
-    {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
-    {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5}
-  ],
-  "teams": [
-    {"team_id": "game-services", "kpis": [{"name": "rework_rate", "...": "..."}, {"name": "delivery_predictability", "...": "..."}]},
-    {"team_id": "payment-services", "kpis": [{"name": "rework_rate", "...": "..."}, {"name": "delivery_predictability", "...": "..."}]}
-  ],
-  "errors": []
-}
-```
-
-### `GET /kpi/drilldown` -- work items behind a stat
-
-```
-GET /kpi/drilldown?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&metric=items_with_rework
-```
-
-Returns the full deliverable rows filtered to items matching the metric. Supports `skip`/`limit` pagination.
-
-Available `metric` values:
-
-| Metric | KPI | Description |
-|--------|-----|-------------|
-| `items_reached_qa` | Rework Rate | Deliverables that were in QA Active at any point |
-| `items_with_rework` | Rework Rate | Subset with rework tags (Code Defect or Scope/Requirements) |
-| `items_bounced_back` | Rework Rate | Deliverables with bounces > 0 |
-| `items_with_bugs` | Rework Rate | Deliverables with at least one linked bug |
-| `items_committed` | Delivery Predictability | Items started in period + spillovers |
-| `items_deployed` | Delivery Predictability | Committed items that ended in Delivered status |
-| `items_started_in_period` | Delivery Predictability | Items whose start_date falls within the period |
-| `items_spillover` | Delivery Predictability | Items that were already active before the period |
+KPIs are computed from report data (no additional Azure DevOps calls). Thresholds are configurable in `app/config/kpis.yaml`.
 
 ### Rework Rate
 
@@ -648,11 +564,13 @@ Available `metric` values:
 rework_rate = items_with_rework / items_reached_qa
 ```
 
-| RAG | Threshold |
-|-----|-----------|
-| Green | <= 10% |
-| Amber | 10-15% |
-| Red | > 15% |
+
+| RAG   | Threshold |
+| ----- | --------- |
+| Green | <= 10%    |
+| Amber | 10-15%    |
+| Red   | > 15%     |
+
 
 ### Delivery Predictability
 
@@ -662,144 +580,32 @@ delivery_predictability = items_deployed / items_committed
 
 Where `items_committed` = items started in the period (non-spillovers with `start_date` in range) + spillovers (items already active before the period). `items_deployed` = committed items that ended the period in Delivered status.
 
-| RAG | Threshold |
-|-----|-----------|
-| Green | >= 85% |
-| Amber | 70-85% |
-| Red | < 70% |
+
+| RAG   | Threshold |
+| ----- | --------- |
+| Green | >= 85%    |
+| Amber | 70-85%    |
+| Red   | < 70%     |
+
 
 All thresholds are configurable in `app/config/kpis.yaml`.
-
-### Per-KPI Endpoints
-
-Each KPI also has its own dedicated endpoints that return a single KPI object (not a list).
-
-#### `GET /kpi/rework-rate` -- single team
-
-```
-GET /kpi/rework-rate?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31
-```
-
-Response:
-
-```json
-{
-  "team_id": "game-services",
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "kpi": {
-    "name": "rework_rate",
-    "value": 0.10,
-    "display": "10.0%",
-    "rag": "green",
-    "items_with_rework": 5,
-    "items_reached_qa": 50,
-    "items_bounced_back": 3,
-    "total_bugs": 8,
-    "thresholds": {"green": "<= 10%", "amber": "10%-15%", "red": "> 15%"}
-  }
-}
-```
-
-#### `GET /kpi/rework-rate/summary` -- across all teams
-
-```
-GET /kpi/rework-rate/summary?start_date=2025-01-01&end_date=2025-01-31
-```
-
-Response:
-
-```json
-{
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "average": {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
-  "teams": [
-    {"team_id": "game-services", "kpi": {"name": "rework_rate", "value": 0.10, "...": "..."}},
-    {"team_id": "payment-services", "kpi": {"name": "rework_rate", "value": 0.06, "...": "..."}}
-  ],
-  "errors": []
-}
-```
-
-#### `GET /kpi/rework-rate/drilldown` -- drilldown
-
-```
-GET /kpi/rework-rate/drilldown?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&metric=items_with_rework
-```
-
-Available metrics: `items_reached_qa`, `items_with_rework`, `items_bounced_back`, `items_with_bugs`
-
-#### `GET /kpi/delivery-predictability` -- single team
-
-```
-GET /kpi/delivery-predictability?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31
-```
-
-Response:
-
-```json
-{
-  "team_id": "game-services",
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "kpi": {
-    "name": "delivery_predictability",
-    "value": 0.90,
-    "display": "90.0%",
-    "rag": "green",
-    "items_committed": 50,
-    "items_deployed": 45,
-    "items_started_in_period": 35,
-    "items_spillover": 15,
-    "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}
-  }
-}
-```
-
-#### `GET /kpi/delivery-predictability/summary` -- across all teams
-
-```
-GET /kpi/delivery-predictability/summary?start_date=2025-01-01&end_date=2025-01-31
-```
-
-Response:
-
-```json
-{
-  "start_date": "2025-01-01",
-  "end_date": "2025-01-31",
-  "average": {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5},
-  "teams": [
-    {"team_id": "game-services", "kpi": {"name": "delivery_predictability", "value": 0.90, "...": "..."}},
-    {"team_id": "payment-services", "kpi": {"name": "delivery_predictability", "value": 0.85, "...": "..."}}
-  ],
-  "errors": []
-}
-```
-
-#### `GET /kpi/delivery-predictability/drilldown` -- drilldown
-
-```
-GET /kpi/delivery-predictability/drilldown?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&metric=items_deployed
-```
-
-Available metrics: `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover`
 
 ---
 
 ## Config
 
-Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, state mappings, tech_debt_epic_ids, post_mortem_epic_ids, and post_mortem_sla_weeks per team. The five default teams are: **game-services**, **domain-tooling-services**, **payment-services**, **player-engagement-services**, **rules-engine**.
+Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, state mappings, tech_debt_epic_ids, post_mortem_epic_ids, and post_mortem_sla_weeks per team. The five default teams are: **game-services**, **domain-tooling-service**items_with_rework**s**, **payment-services**, **player-engagement-services**, **rules-engine**.
 
 **Canonical statuses** (each maps from real Azure DevOps states; configurable per team in `states`):
 
-| Canonical status     | Example real states |
-|----------------------|----------------------|
-| Development Active   | Active, Onhold, Blocked, Code Review |
-| QA Active            | Ready for QA, In QA, QA bug pending |
-| Delivered            | Release Candidate, Closed, Resolved |
-| Backlog              | New, Ready |
+
+| Canonical status   | Example real states                  |
+| ------------------ | ------------------------------------ |
+| Development Active | Active, Onhold, Blocked, Code Review |
+| QA Active          | Ready for QA, In QA, QA bug pending  |
+| Delivered          | Release Candidate, Closed, Resolved  |
+| Backlog            | New, Ready                           |
+
 
 ---
 

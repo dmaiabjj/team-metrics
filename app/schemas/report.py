@@ -89,6 +89,8 @@ class DeliverableRow(BaseModel):
 
 
 class ReportResponse(BaseModel):
+    """Internal model used by the service layer and cache."""
+
     team_id: str
     start_date: date
     end_date: date
@@ -96,13 +98,14 @@ class ReportResponse(BaseModel):
     deliverables: list[DeliverableRow] = Field(default_factory=list)
 
 
-class TeamReportResponse(BaseModel):
+class WorkItemsResponse(BaseModel):
+    """API response for GET /teams/{team_id}/work-items."""
+
     team_id: str
-    deliverables: list[DeliverableRow] = Field(default_factory=list)
-
-
-class MultiTeamReportResponse(BaseModel):
-    teams: list[TeamReportResponse] = Field(default_factory=list)
+    start_date: date
+    end_date: date
+    total: int = Field(0, description="Total number of items before pagination.")
+    items: list[DeliverableRow] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):

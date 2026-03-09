@@ -69,17 +69,47 @@ KPIResult = Annotated[
 ]
 
 
-class KPIResponse(BaseModel):
+# ---------------------------------------------------------------------------
+# Endpoint 2: GET /teams/{team_id}/kpis
+# ---------------------------------------------------------------------------
+
+class TeamKPIsResponse(BaseModel):
     team_id: str
     start_date: date
     end_date: date
     kpis: list[KPIResult] = Field(default_factory=list)
 
 
-class TeamKPIEntry(BaseModel):
-    team_id: str
-    kpis: list[KPIResult] = Field(default_factory=list)
+# ---------------------------------------------------------------------------
+# Endpoint 3: GET /teams/{team_id}/kpis/{kpi_name}
+# ---------------------------------------------------------------------------
 
+class TeamKPIDetailResponse(BaseModel):
+    team_id: str
+    start_date: date
+    end_date: date
+    kpi: KPIResult
+    total: int = Field(0, description="Total work items involved in this KPI")
+    items: list[DeliverableRow] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 4: GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}
+# ---------------------------------------------------------------------------
+
+class DrilldownResponse(BaseModel):
+    team_id: str
+    start_date: date
+    end_date: date
+    kpi_name: str
+    metric: str
+    total: int = Field(description="Total matching items before pagination")
+    items: list[DeliverableRow] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 1: GET /dashboard
+# ---------------------------------------------------------------------------
 
 class AverageKPI(BaseModel):
     name: str
@@ -94,62 +124,14 @@ class TeamError(BaseModel):
     error: str
 
 
-class KPISummaryResponse(BaseModel):
+class TeamKPIEntry(BaseModel):
+    team_id: str
+    kpis: list[KPIResult] = Field(default_factory=list)
+
+
+class DashboardResponse(BaseModel):
     start_date: date
     end_date: date
     averages: list[AverageKPI] = Field(default_factory=list)
     teams: list[TeamKPIEntry] = Field(default_factory=list)
     errors: list[TeamError] = Field(default_factory=list, description="Teams that failed")
-
-
-class DrilldownResponse(BaseModel):
-    team_id: str
-    start_date: date
-    end_date: date
-    metric: str
-    total: int = Field(description="Total matching items before pagination")
-    items: list[DeliverableRow] = Field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# Per-KPI endpoint responses
-# ---------------------------------------------------------------------------
-
-class ReworkRateResponse(BaseModel):
-    team_id: str
-    start_date: date
-    end_date: date
-    kpi: ReworkRateKPI
-
-
-class ReworkRateTeamEntry(BaseModel):
-    team_id: str
-    kpi: ReworkRateKPI
-
-
-class ReworkRateSummaryResponse(BaseModel):
-    start_date: date
-    end_date: date
-    average: AverageKPI
-    teams: list[ReworkRateTeamEntry] = Field(default_factory=list)
-    errors: list[TeamError] = Field(default_factory=list)
-
-
-class DeliveryPredictabilityResponse(BaseModel):
-    team_id: str
-    start_date: date
-    end_date: date
-    kpi: DeliveryPredictabilityKPI
-
-
-class DPTeamEntry(BaseModel):
-    team_id: str
-    kpi: DeliveryPredictabilityKPI
-
-
-class DeliveryPredictabilitySummaryResponse(BaseModel):
-    start_date: date
-    end_date: date
-    average: AverageKPI
-    teams: list[DPTeamEntry] = Field(default_factory=list)
-    errors: list[TeamError] = Field(default_factory=list)

@@ -14,8 +14,8 @@ from slowapi.util import get_remote_address
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.api.cache import router as cache_router
-from app.api.kpi import router as kpi_router
-from app.api.report import router as report_router
+from app.api.dashboard import router as dashboard_router
+from app.api.teams import router as teams_router
 from app.cache import ReportCache, WorkItemCache
 from app.config.kpi_loader import load_kpi_config
 from app.config.team_loader import load_teams_config
@@ -104,9 +104,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(status_code=429, content=body.model_dump())
 
 
-app.include_router(report_router, prefix="/report", tags=["report"])
+app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(teams_router, prefix="/teams", tags=["teams"])
 app.include_router(cache_router, prefix="/cache", tags=["cache"])
-app.include_router(kpi_router, prefix="/kpi", tags=["kpi"])
 
 
 # ---------------------------------------------------------------------------

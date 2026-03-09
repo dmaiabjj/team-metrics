@@ -15,213 +15,220 @@ class TestHealth:
         assert r.json()["azure"] == "not_configured"
 
 
-class TestReportErrors:
-    def test_report_missing_params(self, client):
-        r = client.get("/report")
+# ---------------------------------------------------------------------------
+# Endpoint 1: GET /dashboard
+# ---------------------------------------------------------------------------
+
+class TestDashboard:
+    def test_missing_params(self, client):
+        r = client.get("/dashboard")
         assert r.status_code == 422
 
-    def test_report_bad_date_range(self, client):
-        r = client.get("/report", params={
-            "team_id": "game-services",
+    def test_bad_date_range(self, client):
+        r = client.get("/dashboard", params={
             "start_date": "2025-02-01",
             "end_date": "2025-01-01",
         })
         assert r.status_code == 400
         assert "start_date" in r.json()["detail"]
 
-    def test_report_unknown_team(self, client):
-        r = client.get("/report", params={
-            "team_id": "nonexistent-team",
+    def test_no_azure_client(self, client):
+        r = client.get("/dashboard", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 5: GET /teams/{team_id}/work-items
+# ---------------------------------------------------------------------------
+
+class TestWorkItems:
+    def test_missing_params(self, client):
+        r = client.get("/teams/game-services/work-items")
+        assert r.status_code == 422
+
+    def test_unknown_team(self, client):
+        r = client.get("/teams/nonexistent-team/work-items", params={
             "start_date": "2025-01-01",
             "end_date": "2025-01-31",
         })
         assert r.status_code == 404
         assert "nonexistent-team" in r.json()["detail"]
 
-    def test_report_no_azure_client(self, client):
-        """With azure_client=None the dependency returns 503."""
-        r = client.get("/report", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 503
-
-    def test_multi_report_unknown_team(self, client):
-        r = client.get("/report/multi", params={
-            "team_ids": "game-services,unknown-team",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 404
-        assert "unknown-team" in str(r.json()["detail"])
-
-
-class TestKPIEndpoints:
-    def test_kpi_missing_params(self, client):
-        r = client.get("/kpi")
-        assert r.status_code == 422
-
-    def test_kpi_unknown_team(self, client):
-        r = client.get("/kpi", params={
-            "team_id": "nonexistent-team",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 404
-
-    def test_kpi_no_azure_client(self, client):
-        r = client.get("/kpi", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 503
-
-    def test_kpi_bad_date_range(self, client):
-        r = client.get("/kpi", params={
-            "team_id": "game-services",
+    def test_bad_date_range(self, client):
+        r = client.get("/teams/game-services/work-items", params={
             "start_date": "2025-02-01",
             "end_date": "2025-01-01",
         })
         assert r.status_code == 400
 
-    def test_summary_missing_params(self, client):
-        r = client.get("/kpi/summary")
+    def test_no_azure_client(self, client):
+        r = client.get("/teams/game-services/work-items", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 2: GET /teams/{team_id}/kpis
+# ---------------------------------------------------------------------------
+
+class TestTeamKPIs:
+    def test_missing_params(self, client):
+        r = client.get("/teams/game-services/kpis")
         assert r.status_code == 422
 
-    def test_summary_no_azure_client(self, client):
+    def test_unknown_team(self, client):
+        r = client.get("/teams/nonexistent-team/kpis", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 404
+
+    def test_bad_date_range(self, client):
+        r = client.get("/teams/game-services/kpis", params={
+            "start_date": "2025-02-01",
+            "end_date": "2025-01-01",
+        })
+        assert r.status_code == 400
+
+    def test_no_azure_client(self, client):
+        r = client.get("/teams/game-services/kpis", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 3: GET /teams/{team_id}/kpis/{kpi_name}
+# ---------------------------------------------------------------------------
+
+class TestTeamKPIDetail:
+    def test_missing_params(self, client):
+        r = client.get("/teams/game-services/kpis/rework-rate")
+        assert r.status_code == 422
+
+    def test_unknown_team(self, client):
+        r = client.get("/teams/nonexistent-team/kpis/rework-rate", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 404
+
+    def test_invalid_kpi_name(self, client):
+        r = client.get("/teams/game-services/kpis/invalid-kpi", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 422
+
+    def test_no_azure_client_rework(self, client):
+        r = client.get("/teams/game-services/kpis/rework-rate", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_no_azure_client_dp(self, client):
+        r = client.get("/teams/game-services/kpis/delivery-predictability", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 4: GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}
+# ---------------------------------------------------------------------------
+
+class TestDrilldown:
+    def test_missing_params(self, client):
+        r = client.get("/teams/game-services/kpis/rework-rate/drilldown/items_reached_qa")
+        assert r.status_code == 422
+
+    def test_unknown_team(self, client):
+        r = client.get("/teams/nonexistent-team/kpis/rework-rate/drilldown/items_reached_qa", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 404
+
+    def test_invalid_kpi_name(self, client):
+        r = client.get("/teams/game-services/kpis/invalid-kpi/drilldown/items_reached_qa", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 422
+
+    def test_wrong_metric_for_kpi(self, client):
+        """items_committed is a DP metric, not a rework metric."""
+        r = client.get("/teams/game-services/kpis/rework-rate/drilldown/items_committed", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 422
+        assert "Invalid metric" in r.json()["detail"]
+
+    def test_wrong_metric_for_dp(self, client):
+        """items_reached_qa is a rework metric, not a DP metric."""
+        r = client.get("/teams/game-services/kpis/delivery-predictability/drilldown/items_reached_qa", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 422
+
+    def test_no_azure_client(self, client):
+        r = client.get("/teams/game-services/kpis/rework-rate/drilldown/items_reached_qa", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_valid_dp_metric(self, client):
+        """items_deployed is a valid DP metric, should get 503 (no Azure), not 422."""
+        r = client.get("/teams/game-services/kpis/delivery-predictability/drilldown/items_deployed", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Old endpoints should be gone
+# ---------------------------------------------------------------------------
+
+class TestOldEndpointsRemoved:
+    def test_old_report(self, client):
+        r = client.get("/report", params={
+            "team_id": "game-services",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 404
+
+    def test_old_kpi(self, client):
+        r = client.get("/kpi", params={
+            "team_id": "game-services",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 404
+
+    def test_old_kpi_summary(self, client):
         r = client.get("/kpi/summary", params={
             "start_date": "2025-01-01",
             "end_date": "2025-01-31",
         })
-        assert r.status_code == 503
-
-    def test_drilldown_missing_params(self, client):
-        r = client.get("/kpi/drilldown")
-        assert r.status_code == 422
-
-    def test_drilldown_unknown_team(self, client):
-        r = client.get("/kpi/drilldown", params={
-            "team_id": "nonexistent-team",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-            "metric": "items_reached_qa",
-        })
         assert r.status_code == 404
 
-    def test_drilldown_invalid_metric(self, client):
-        r = client.get("/kpi/drilldown", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-            "metric": "invalid_metric",
-        })
-        assert r.status_code == 422
 
-    def test_drilldown_no_azure_client(self, client):
-        r = client.get("/kpi/drilldown", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-            "metric": "items_reached_qa",
-        })
-        assert r.status_code == 503
-
-
-class TestReworkRateEndpoints:
-    def test_rework_rate_missing_params(self, client):
-        r = client.get("/kpi/rework-rate")
-        assert r.status_code == 422
-
-    def test_rework_rate_unknown_team(self, client):
-        r = client.get("/kpi/rework-rate", params={
-            "team_id": "nonexistent-team",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 404
-
-    def test_rework_rate_no_azure_client(self, client):
-        r = client.get("/kpi/rework-rate", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 503
-
-    def test_rework_rate_summary_no_azure(self, client):
-        r = client.get("/kpi/rework-rate/summary", params={
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 503
-
-    def test_rework_rate_drilldown_unknown_team(self, client):
-        r = client.get("/kpi/rework-rate/drilldown", params={
-            "team_id": "nonexistent-team",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-            "metric": "items_reached_qa",
-        })
-        assert r.status_code == 404
-
-    def test_rework_rate_drilldown_invalid_metric(self, client):
-        r = client.get("/kpi/rework-rate/drilldown", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-            "metric": "items_committed",
-        })
-        assert r.status_code == 422
-
-
-class TestDeliveryPredictabilityEndpoints:
-    def test_dp_missing_params(self, client):
-        r = client.get("/kpi/delivery-predictability")
-        assert r.status_code == 422
-
-    def test_dp_unknown_team(self, client):
-        r = client.get("/kpi/delivery-predictability", params={
-            "team_id": "nonexistent-team",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 404
-
-    def test_dp_no_azure_client(self, client):
-        r = client.get("/kpi/delivery-predictability", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 503
-
-    def test_dp_summary_no_azure(self, client):
-        r = client.get("/kpi/delivery-predictability/summary", params={
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-        })
-        assert r.status_code == 503
-
-    def test_dp_drilldown_unknown_team(self, client):
-        r = client.get("/kpi/delivery-predictability/drilldown", params={
-            "team_id": "nonexistent-team",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-            "metric": "items_committed",
-        })
-        assert r.status_code == 404
-
-    def test_dp_drilldown_invalid_metric(self, client):
-        r = client.get("/kpi/delivery-predictability/drilldown", params={
-            "team_id": "game-services",
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
-            "metric": "items_reached_qa",
-        })
-        assert r.status_code == 422
-
+# ---------------------------------------------------------------------------
+# Cache endpoints (unchanged)
+# ---------------------------------------------------------------------------
 
 class TestCacheEndpoints:
     def test_cache_stats_empty(self, client):
