@@ -116,10 +116,6 @@ app.include_router(kpi_router, prefix="/kpi", tags=["kpi"])
 @app.exception_handler(httpx.HTTPStatusError)
 async def azure_http_error_handler(request: Request, exc: httpx.HTTPStatusError):
     """Translate upstream Azure DevOps errors into clean API responses."""
-    # #region agent log
-    import json as _json, traceback as _tb; _log_path = "/Volumes/Personal Data/VenturesLab/ai/team_metrics/.cursor/debug-79de70.log"
-    with open(_log_path, "a") as _f: _f.write(_json.dumps({"sessionId":"79de70","hypothesisId":"D","location":"main.py:azure_http_error_handler","message":"Exception caught","data":{"request_url":str(exc.request.url),"response_status":exc.response.status_code,"response_text":exc.response.text[:1000],"api_path":request.url.path,"traceback":"".join(_tb.format_exception(exc))[-2000:]},"timestamp":__import__("time").time()}) + "\n")
-    # #endregion
     status = exc.response.status_code
     logger.error(
         "Azure DevOps returned %d for %s: %s",
