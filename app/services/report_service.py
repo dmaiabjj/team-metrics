@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.config.loader import TeamConfig, get_team_config, load_teams_config
-from app.schemas.report import DeliverableRow, ReportResponse, StatusTimelineEntry
+from app.schemas.report import BounceDetail, DeliverableRow, ReportResponse, StatusTimelineEntry
 from app.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -290,15 +290,61 @@ TAG_SCOPE_REQUIREMENTS = "Scope / Requirements"
 TAG_SPILLOVER = "Spillover"
 
 
+def _compute_bounces(
+    revisions: list[dict],
+    real_to_canonical: dict[str, str],
+) -> tuple[int, list[BounceDetail]]:
+    """Count how many times the item went from QA/Delivered back to active/backlog.
+
+    Returns (bounce_count, bounce_details). Each detail records the revision
+    numbers, states, and timestamp of the regression.
+    """
+    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    sorted_revs = sorted(
+        (r for r in revisions if _parse_revision_date(r) is not None),
+        key=lambda r: _parse_revision_date(r) or _min_dt,
+    )
+
+    details: list[BounceDetail] = []
+    prev_canon: str | None = None
+    prev_state: str | None = None
+    prev_rev_num: int = 0
+
+    for rev in sorted_revs:
+        state = _revision_state(rev)
+        canon = real_to_canonical.get(state)
+        rev_num = rev.get("rev", 0)
+
+        if (
+            prev_canon in ("QA Active", "Delivered")
+            and canon in ("Development Active", "Backlog")
+        ):
+            dt = _parse_revision_date(rev) or _min_dt
+            details.append(BounceDetail(
+                from_revision=prev_rev_num,
+                to_revision=rev_num,
+                from_state=prev_state or "",
+                to_state=state,
+                date=dt,
+            ))
+
+        prev_canon = canon
+        prev_state = state
+        prev_rev_num = rev_num
+
+    return len(details), details
+
+
 def _compute_tags(
     revisions: list[dict],
     real_to_canonical: dict[str, str],
     child_bug_ids: list[int],
     status_at_start: str | None,
+    bounce_count: int,
 ) -> tuple[bool, bool, list[str]]:
     """Compute deliverable tags, has_rework, and is_spillover.
 
-    Tags: 'Code Defect' (linked bugs), 'Scope / Requirements' (returned to active after QA/Delivered),
+    Tags: 'Code Defect' (linked bugs), 'Scope / Requirements' (bounced back at least once),
     'Spillover' (in Development Active or QA Active before the period).
     has_rework is True when 'Code Defect' or 'Scope / Requirements' is in tags.
     Returns (has_rework, is_spillover, tags).
@@ -307,20 +353,8 @@ def _compute_tags(
     if child_bug_ids:
         tags.append(TAG_CODE_DEFECT)
 
-    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    sorted_revs = sorted(
-        (r for r in revisions if _parse_revision_date(r) is not None),
-        key=lambda r: _parse_revision_date(r) or _min_dt,
-    )
-    seen_qa_or_delivered = False
-    for rev in sorted_revs:
-        state = _revision_state(rev)
-        canon = real_to_canonical.get(state)
-        if canon in ("QA Active", "Delivered"):
-            seen_qa_or_delivered = True
-        if seen_qa_or_delivered and canon in ("Development Active", "Backlog"):
-            tags.append(TAG_SCOPE_REQUIREMENTS)
-            break
+    if bounce_count > 0:
+        tags.append(TAG_SCOPE_REQUIREMENTS)
 
     if status_at_start is not None:
         canon_start = real_to_canonical.get(status_at_start)
@@ -560,7 +594,10 @@ async def run_report(
         developer, qa, release_manager = _compute_role_assignments(revs, real_to_canonical)
         status_timeline = _compute_status_timeline(revs, real_to_canonical)
         status_at_start, status_at_end = _compute_boundary_statuses(revs, start_dt, end_dt)
-        has_rework, is_spillover, tags = _compute_tags(revs, real_to_canonical, child_bug_ids, status_at_start)
+        bounce_count, bounce_details = _compute_bounces(revs, real_to_canonical)
+        has_rework, is_spillover, tags = _compute_tags(
+            revs, real_to_canonical, child_bug_ids, status_at_start, bounce_count,
+        )
 
         deliverables.append(
             DeliverableRow(
@@ -582,6 +619,8 @@ async def run_report(
                 release_manager=release_manager,
                 has_rework=has_rework,
                 is_spillover=is_spillover,
+                bounces=bounce_count,
+                bounce_details=bounce_details,
                 tags=tags,
             )
         )

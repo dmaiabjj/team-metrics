@@ -8,6 +8,7 @@ from app.config.loader import load_teams_config
 from app.services.report_service import (
     _apply_inclusion,
     _collect_children,
+    _compute_bounces,
     _compute_boundary_statuses,
     _compute_tags,
     _compute_role_assignments,
@@ -433,7 +434,7 @@ def test_compute_boundary_statuses_empty():
 
 
 # ---------------------------------------------------------------------------
-# Tags & rework detection
+# Bounces
 # ---------------------------------------------------------------------------
 
 _TAG_CANONICAL = {
@@ -444,12 +445,68 @@ _TAG_CANONICAL = {
 }
 
 
+def test_bounces_none():
+    revs = [
+        {"rev": 1, "fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
+        {"rev": 2, "fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Closed"}},
+    ]
+    count, details = _compute_bounces(revs, _TAG_CANONICAL)
+    assert count == 0
+    assert details == []
+
+
+def test_bounces_single():
+    revs = [
+        {"rev": 1, "fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
+        {"rev": 2, "fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "In Review"}},
+        {"rev": 3, "fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Active"}},
+    ]
+    count, details = _compute_bounces(revs, _TAG_CANONICAL)
+    assert count == 1
+    assert details[0].from_revision == 2
+    assert details[0].to_revision == 3
+    assert details[0].from_state == "In Review"
+    assert details[0].to_state == "Active"
+
+
+def test_bounces_multiple():
+    revs = [
+        {"rev": 1, "fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
+        {"rev": 2, "fields": {"System.ChangedDate": "2025-01-05T10:00:00Z", "System.State": "In Review"}},
+        {"rev": 3, "fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "Active"}},
+        {"rev": 4, "fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Closed"}},
+        {"rev": 5, "fields": {"System.ChangedDate": "2025-01-20T10:00:00Z", "System.State": "Active"}},
+    ]
+    count, details = _compute_bounces(revs, _TAG_CANONICAL)
+    assert count == 2
+    assert details[0].from_state == "In Review"
+    assert details[0].to_state == "Active"
+    assert details[1].from_state == "Closed"
+    assert details[1].to_state == "Active"
+
+
+def test_bounces_delivered_to_backlog():
+    revs = [
+        {"rev": 5, "fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "Closed"}},
+        {"rev": 6, "fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "New"}},
+    ]
+    count, details = _compute_bounces(revs, _TAG_CANONICAL)
+    assert count == 1
+    assert details[0].from_state == "Closed"
+    assert details[0].to_state == "New"
+
+
+# ---------------------------------------------------------------------------
+# Tags & rework detection
+# ---------------------------------------------------------------------------
+
+
 def test_tags_no_rework():
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
         {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Closed"}},
     ]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], None)
+    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], None, 0)
     assert has_rework is False
     assert is_spillover is False
     assert tags == []
@@ -457,57 +514,27 @@ def test_tags_no_rework():
 
 def test_tags_code_defect_from_linked_bugs():
     revs = [{"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [100, 101], None)
+    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [100, 101], None, 0)
     assert has_rework is True
     assert is_spillover is False
     assert "Code Defect" in tags
 
 
-def test_tags_scope_requirements_returned_after_qa():
-    revs = [
-        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
-        {"fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "In Review"}},
-        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Active"}},
-    ]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], None)
+def test_tags_scope_requirements_from_bounces():
+    has_rework, is_spillover, tags = _compute_tags([], _TAG_CANONICAL, [], None, 2)
     assert has_rework is True
     assert "Scope / Requirements" in tags
 
 
-def test_tags_scope_requirements_returned_after_delivered():
-    revs = [
-        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
-        {"fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "Closed"}},
-        {"fields": {"System.ChangedDate": "2025-01-20T10:00:00Z", "System.State": "Active"}},
-    ]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], None)
-    assert has_rework is True
-    assert "Scope / Requirements" in tags
-
-
-def test_tags_scope_requirements_returned_to_backlog():
-    revs = [
-        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "In Review"}},
-        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "New"}},
-    ]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], None)
-    assert has_rework is True
-    assert "Scope / Requirements" in tags
-
-
-def test_tags_no_scope_requirements_never_reached_qa():
-    revs = [
-        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
-        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "New"}},
-    ]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], None)
+def test_tags_no_scope_requirements_zero_bounces():
+    has_rework, is_spillover, tags = _compute_tags([], _TAG_CANONICAL, [], None, 0)
     assert has_rework is False
     assert "Scope / Requirements" not in tags
 
 
 def test_tags_spillover_dev_active_at_start():
     revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "Active"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "Active")
+    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "Active", 0)
     assert is_spillover is True
     assert "Spillover" in tags
     assert has_rework is False
@@ -515,7 +542,7 @@ def test_tags_spillover_dev_active_at_start():
 
 def test_tags_spillover_qa_active_at_start():
     revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "In Review"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "In Review")
+    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "In Review", 0)
     assert is_spillover is True
     assert "Spillover" in tags
     assert has_rework is False
@@ -523,14 +550,14 @@ def test_tags_spillover_qa_active_at_start():
 
 def test_tags_no_spillover_when_backlog_at_start():
     revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "New"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "New")
+    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "New", 0)
     assert is_spillover is False
     assert "Spillover" not in tags
 
 
 def test_tags_combined_code_defect_and_spillover():
     revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "Active"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [200], "Active")
+    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [200], "Active", 0)
     assert has_rework is True
     assert is_spillover is True
     assert "Code Defect" in tags

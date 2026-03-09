@@ -95,6 +95,8 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "release_manager": "Carol White",
       "has_rework": true,
       "is_spillover": false,
+      "bounces": 0,
+      "bounce_details": [],
       "tags": ["Code Defect"]
     },
     {
@@ -104,9 +106,10 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "description": null,
       "state": "In Progress",
       "canonical_status": "Development Active",
-      "status_at_start": null,
+      "status_at_start": "In QA",
       "status_at_end": "Active",
       "status_timeline": [
+        {"date": "2024-12-20T08:00:00Z", "state": "In QA", "canonical_status": "QA Active", "assigned_to": "Bob Jones"},
         {"date": "2025-01-05T08:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Alice Smith"}
       ],
       "parent_epic_title": null,
@@ -114,11 +117,15 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "child_bug_ids": [],
       "child_task_ids": [],
       "developer": "Alice Smith",
-      "qa": null,
+      "qa": "Bob Jones",
       "release_manager": null,
-      "has_rework": false,
+      "has_rework": true,
       "is_spillover": true,
-      "tags": ["Spillover"]
+      "bounces": 1,
+      "bounce_details": [
+        {"from_revision": 7, "to_revision": 8, "from_state": "In QA", "to_state": "Active", "date": "2025-01-05T08:00:00Z"}
+      ],
+      "tags": ["Scope / Requirements", "Spillover"]
     }
   ]
 }
@@ -186,6 +193,8 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           "parent_feature_title": "Payment MVP",
           "has_rework": true,
           "is_spillover": false,
+          "bounces": 0,
+          "bounce_details": [],
           "tags": ["Code Defect"],
           "child_bug_ids": [12346],
           "child_task_ids": [12347, 12348],
@@ -215,6 +224,8 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           "parent_feature_title": "Refunds",
           "has_rework": false,
           "is_spillover": true,
+          "bounces": 0,
+          "bounce_details": [],
           "tags": ["Spillover"],
           "child_bug_ids": [],
           "child_task_ids": [12401],
@@ -273,12 +284,14 @@ Values are `null` when no one was assigned during the corresponding phase.
 
 ## Tags & Rework
 
-Each deliverable includes a `tags` list, `has_rework`, and `is_spillover` booleans:
+Each deliverable includes tags, boolean flags, and bounce tracking:
 
 | Field | Description |
 |-------|-------------|
 | `has_rework` | `true` if any rework tag is present (`Code Defect` or `Scope / Requirements`) |
 | `is_spillover` | `true` if the item was already in dev or QA at the start of the period |
+| `bounces` | Number of times the item went back from QA/Delivered to active/backlog |
+| `bounce_details` | List of bounce events with `from_revision`, `to_revision`, `from_state`, `to_state`, `date` |
 | `tags` | List of tags assigned to the deliverable (see below) |
 
 **Available tags:**
@@ -286,7 +299,7 @@ Each deliverable includes a `tags` list, `has_rework`, and `is_spillover` boolea
 | Tag | Condition |
 |-----|-----------|
 | `Code Defect` | The work item has one or more linked child bugs (`child_bug_ids` non-empty). |
-| `Scope / Requirements` | The item reached **QA Active** or **Delivered** and was later moved back to **Development Active** or **Backlog**. |
+| `Scope / Requirements` | The item bounced back at least once (`bounces > 0`). |
 | `Spillover` | The item was in **Development Active** or **QA Active** at the start of the queried period (`status_at_start`). |
 
 A deliverable can have multiple tags simultaneously (e.g. both `Code Defect` and `Spillover`).

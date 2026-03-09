@@ -16,6 +16,14 @@ class StatusTimelineEntry(BaseModel):
     assigned_to: str | None = None
 
 
+class BounceDetail(BaseModel):
+    from_revision: int
+    to_revision: int
+    from_state: str
+    to_state: str
+    date: datetime
+
+
 class DeliverableRow(BaseModel):
     id: int
     work_item_type: str
@@ -40,6 +48,14 @@ class DeliverableRow(BaseModel):
     is_spillover: bool = Field(
         default=False,
         description="True if the item was in Development Active or QA Active at the start of the period.",
+    )
+    bounces: int = Field(
+        default=0,
+        description="Number of times the item went back from QA/Delivered to active.",
+    )
+    bounce_details: list[BounceDetail] = Field(
+        default_factory=list,
+        description="Details of each bounce: which revisions, states, and when.",
     )
     tags: list[str] = Field(
         default_factory=list,
