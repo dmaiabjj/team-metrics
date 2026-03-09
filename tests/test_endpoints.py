@@ -236,17 +236,33 @@ class TestDrilldown:
         assert r.status_code == 422
         assert "Invalid metric" in r.json()["detail"]
 
-    def test_valid_wd_metric(self, client):
-        """developer_assignments is a valid WD metric, should get 503 (no Azure), not 422."""
-        r = client.get("/teams/game-services/kpis/wip-discipline/drilldown/developer_assignments", params={
+    def test_valid_wd_metric_developers(self, client):
+        """developers is a valid WD metric, should get 503 (no Azure), not 422."""
+        r = client.get("/teams/game-services/kpis/wip-discipline/drilldown/developers", params={
             "start_date": "2025-01-01",
             "end_date": "2025-01-31",
         })
         assert r.status_code == 503
 
-    def test_valid_wd_metric_qa(self, client):
-        """qa_assignments is a valid WD metric."""
-        r = client.get("/teams/game-services/kpis/wip-discipline/drilldown/qa_assignments", params={
+    def test_valid_wd_metric_qas(self, client):
+        """qas is a valid WD metric."""
+        r = client.get("/teams/game-services/kpis/wip-discipline/drilldown/qas", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_valid_wd_metric_compliant(self, client):
+        """compliant_gte_80 is a valid WD metric."""
+        r = client.get("/teams/game-services/kpis/wip-discipline/drilldown/compliant_gte_80", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_valid_wd_metric_over_wip(self, client):
+        """over_wip_limit is a valid WD metric."""
+        r = client.get("/teams/game-services/kpis/wip-discipline/drilldown/over_wip_limit", params={
             "start_date": "2025-01-01",
             "end_date": "2025-01-31",
         })

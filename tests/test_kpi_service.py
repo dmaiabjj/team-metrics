@@ -680,8 +680,9 @@ class TestComputeWIPDiscipline:
         assert result.name == "wip_discipline"
         assert result.value == 1.0
         assert result.rag == RAGStatus.GREEN
-        assert result.developers.total_persons == 0
-        assert result.qas.total_persons == 0
+        assert result.total_developers == 0
+        assert result.total_qas == 0
+        assert result.persons == []
 
     def test_all_devs_compliant(self):
         """2 devs each with <= 3 items for all 3 days -> 100% compliant."""
@@ -694,9 +695,8 @@ class TestComputeWIPDiscipline:
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
             date(2025, 1, 1), date(2025, 1, 3),
         )
-        assert result.developers.total_persons == 2
-        assert result.developers.persons_compliant == 2
-        assert result.developers.compliance_rate == 1.0
+        assert result.total_developers == 2
+        assert result.developers_compliant == 2
         assert result.value == 1.0
         assert result.rag == RAGStatus.GREEN
 
@@ -713,11 +713,10 @@ class TestComputeWIPDiscipline:
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
             date(2025, 1, 1), date(2025, 1, 3),
         )
-        assert result.developers.total_persons == 2
-        assert result.developers.persons_compliant == 1
-        assert result.developers.persons_over_limit == 1
-        assert result.developers.compliance_rate == 0.5
-        alice = next(p for p in result.developers.persons if p.person == "Alice")
+        assert result.total_developers == 2
+        assert result.developers_compliant == 1
+        devs = [p for p in result.persons if p.role == "developer"]
+        alice = next(p for p in devs if p.person == "Alice")
         assert alice.is_compliant is False
         assert alice.peak_wip == 4
 
@@ -734,8 +733,8 @@ class TestComputeWIPDiscipline:
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
             date(2025, 1, 1), date(2025, 1, 1),
         )
-        assert result.developers.compliance_rate == 1.0
-        assert result.qas.compliance_rate == 0.0
+        assert result.developers_compliant == 1
+        assert result.qas_compliant == 0
         assert result.value == 0.5
         assert result.rag == RAGStatus.RED
 
@@ -749,7 +748,8 @@ class TestComputeWIPDiscipline:
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
             date(2025, 1, 1), date(2025, 1, 1),
         )
-        alice = result.developers.persons[0]
+        alice = next(p for p in result.persons if p.person == "Alice")
+        assert alice.role == "developer"
         states = {b.state: b.avg_items for b in alice.status_breakdown}
         assert "Active" in states
         assert "Code Review" in states
@@ -769,9 +769,11 @@ class TestComputeWIPDiscipline:
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
             date(2025, 1, 1), date(2025, 1, 3),
         )
-        alice = next(p for p in result.developers.persons if p.person == "Alice")
+        alice = next(p for p in result.persons if p.person == "Alice")
+        assert alice.role == "developer"
         assert alice.avg_wip == pytest.approx(1 / 3, abs=0.01)
-        bob = next(p for p in result.qas.persons if p.person == "Bob")
+        bob = next(p for p in result.persons if p.person == "Bob")
+        assert bob.role == "qa"
         assert bob.avg_wip == pytest.approx(2 / 3, abs=0.01)
 
     def test_compliance_threshold_boundary(self):
@@ -789,7 +791,7 @@ class TestComputeWIPDiscipline:
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
             date(2025, 1, 1), date(2025, 1, 5),
         )
-        alice = next(p for p in result.developers.persons if p.person == "Alice")
+        alice = next(p for p in result.persons if p.person == "Alice")
         assert alice.days_over_limit == 1
         assert alice.days_compliant == 4
         assert alice.compliance_pct == 0.8
@@ -797,40 +799,86 @@ class TestComputeWIPDiscipline:
 
 
 class TestFilterWDMetrics:
-    def test_developer_assignments(self):
+    def test_developers(self):
         items = [
             _make_deliverable(1, developer="Alice"),
             _make_deliverable(2, developer="Bob"),
             _make_deliverable(3, developer=None),
         ]
-        result = filter_deliverables_by_metric(items, "developer_assignments")
+        result = filter_deliverables_by_metric(items, "developers")
         assert len(result) == 2
         assert {d.id for d in result} == {1, 2}
 
-    def test_developer_assignments_with_person_filter(self):
+    def test_developers_with_person_filter(self):
         items = [
             _make_deliverable(1, developer="Alice"),
             _make_deliverable(2, developer="Bob"),
             _make_deliverable(3, developer="Alice"),
         ]
-        result = filter_deliverables_by_metric(items, "developer_assignments", person="Alice")
+        result = filter_deliverables_by_metric(items, "developers", person="Alice")
         assert len(result) == 2
         assert all(d.developer == "Alice" for d in result)
 
-    def test_qa_assignments(self):
+    def test_qas(self):
         items = [
             _make_deliverable(1, qa="Charlie"),
             _make_deliverable(2, qa=None),
         ]
-        result = filter_deliverables_by_metric(items, "qa_assignments")
+        result = filter_deliverables_by_metric(items, "qas")
         assert len(result) == 1
         assert result[0].id == 1
 
-    def test_qa_assignments_with_person_filter(self):
+    def test_qas_with_person_filter(self):
         items = [
             _make_deliverable(1, qa="Charlie"),
             _make_deliverable(2, qa="Dave"),
         ]
-        result = filter_deliverables_by_metric(items, "qa_assignments", person="Charlie")
+        result = filter_deliverables_by_metric(items, "qas", person="Charlie")
         assert len(result) == 1
         assert result[0].qa == "Charlie"
+
+    def test_compliant_gte_80(self):
+        """Items assigned to compliant persons are returned."""
+        items = [
+            _make_wd_deliverable(
+                1, [("2024-12-30", "Active", "Development Active", "Alice")],
+                developer="Alice",
+            ),
+            _make_wd_deliverable(
+                2, [("2024-12-30", "Active", "Development Active", "Alice")],
+                developer="Alice",
+            ),
+            _make_wd_deliverable(
+                3, [("2024-12-30", "Active", "Development Active", "Bob")],
+                developer="Bob",
+            ),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "compliant_gte_80",
+            wd_config=_DEFAULT_WD_CONFIG,
+            team_config=_DEFAULT_TEAM_CONFIG,
+            start=date(2025, 1, 1), end=date(2025, 1, 1),
+        )
+        assert len(result) == 3
+
+    def test_over_wip_limit(self):
+        """Alice has 4 items (limit=3) -> over limit -> items returned."""
+        items = [
+            _make_wd_deliverable(
+                i, [("2024-12-30", "Active", "Development Active", "Alice")],
+                developer="Alice",
+            )
+            for i in range(1, 5)
+        ] + [
+            _make_wd_deliverable(
+                5, [("2024-12-30", "Active", "Development Active", "Bob")],
+                developer="Bob",
+            ),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "over_wip_limit",
+            wd_config=_DEFAULT_WD_CONFIG,
+            team_config=_DEFAULT_TEAM_CONFIG,
+            start=date(2025, 1, 1), end=date(2025, 1, 1),
+        )
+        assert {d.id for d in result} == {1, 2, 3, 4}

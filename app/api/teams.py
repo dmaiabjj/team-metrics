@@ -18,6 +18,7 @@ from app.schemas.kpi import (
     DrilldownResponse,
     TeamKPIDetailResponse,
     TeamKPIsResponse,
+    WIPDisciplineKPI,
 )
 from app.schemas.report import ErrorResponse, WorkItemsResponse
 from app.services.kpi_service import (
@@ -58,7 +59,7 @@ FH_METRICS = frozenset({
     "items_in_queue",
 })
 WD_METRICS = frozenset({
-    "developer_assignments", "qa_assignments",
+    "developers", "qas", "compliant_gte_80", "over_wip_limit",
 })
 KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.REWORK_RATE: REWORK_METRICS,
@@ -133,6 +134,7 @@ async def get_work_items(
 @router.get(
     "/{team_id}/kpis",
     response_model=TeamKPIsResponse,
+    response_model_exclude_none=True,
     responses=_ERROR_RESPONSES,
 )
 @limiter.limit("30/minute")
@@ -153,15 +155,17 @@ async def get_team_kpis(
             report.deliverables, kpi_config.delivery_predictability, start_date, end_date,
         ))
     if kpi_config.flow_hygiene.enabled:
-        kpis.append(await _compute_single_kpi(
+        fh = await _compute_single_kpi(
             KPIName.FLOW_HYGIENE, report.deliverables, kpi_config, start_date, end_date,
             request=request, team_id=team_id,
-        ))
+        )
+        kpis.append(fh.model_copy(update={"states": None}))
     if kpi_config.wip_discipline.enabled:
-        kpis.append(await _compute_single_kpi(
+        wd = await _compute_single_kpi(
             KPIName.WIP_DISCIPLINE, report.deliverables, kpi_config, start_date, end_date,
             request=request, team_id=team_id,
-        ))
+        )
+        kpis.append(wd.model_copy(update={"persons": None}))
     return TeamKPIsResponse(
         team_id=team_id, start_date=start_date, end_date=end_date, kpis=kpis,
     )
@@ -194,19 +198,27 @@ async def get_team_kpi_detail(
 
     seen_ids: set[int] = set()
     items: list = []
-    for metric in KPI_METRICS[kpi_name]:
-        for d in filter_deliverables_by_metric(
-            report.deliverables,
-            metric,
-            rework_config=kpi_config.rework_rate,
-            dp_config=kpi_config.delivery_predictability,
-            fh_config=kpi_config.flow_hygiene,
-            start=start_date,
-            end=end_date,
-        ):
-            if d.id not in seen_ids:
+
+    if isinstance(kpi, WIPDisciplineKPI) and kpi.persons:
+        wip_ids = {wi.id for p in kpi.persons for wi in (p.work_items or [])}
+        for d in report.deliverables:
+            if d.id in wip_ids and d.id not in seen_ids:
                 seen_ids.add(d.id)
                 items.append(d)
+    else:
+        for metric in KPI_METRICS[kpi_name]:
+            for d in filter_deliverables_by_metric(
+                report.deliverables,
+                metric,
+                rework_config=kpi_config.rework_rate,
+                dp_config=kpi_config.delivery_predictability,
+                fh_config=kpi_config.flow_hygiene,
+                start=start_date,
+                end=end_date,
+            ):
+                if d.id not in seen_ids:
+                    seen_ids.add(d.id)
+                    items.append(d)
 
     return TeamKPIDetailResponse(
         team_id=team_id, start_date=start_date, end_date=end_date,
@@ -246,12 +258,15 @@ async def get_kpi_drilldown(
 
     report = await get_team_report(request, team_id, start_date, end_date)
     kpi_config = load_kpi_config()
+    tc = get_team_config(team_id) if kpi_name == KPIName.WIP_DISCIPLINE else None
     filtered = filter_deliverables_by_metric(
         report.deliverables,
         metric,
         rework_config=kpi_config.rework_rate,
         dp_config=kpi_config.delivery_predictability,
         fh_config=kpi_config.flow_hygiene,
+        wd_config=kpi_config.wip_discipline,
+        team_config=tc,
         start=start_date,
         end=end_date,
         person=person,

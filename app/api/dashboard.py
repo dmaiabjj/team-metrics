@@ -45,7 +45,7 @@ limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
 
-@router.get("", response_model=DashboardResponse, responses=_ERROR_RESPONSES)
+@router.get("", response_model=DashboardResponse, response_model_exclude_none=True, responses=_ERROR_RESPONSES)
 @limiter.limit("10/minute")
 async def get_dashboard(
     request: Request,
@@ -93,7 +93,7 @@ async def get_dashboard(
                     report.deliverables, kpi_config.flow_hygiene,
                     wip_limits, start_date, end_date,
                 )
-                kpis.append(fh)
+                kpis.append(fh.model_copy(update={"states": None}))
                 all_fh_kpis.append(fh)
         if kpi_config.wip_discipline.enabled:
             tc = tc if tc is not None else get_team_config(tid)
@@ -102,7 +102,7 @@ async def get_dashboard(
                     report.deliverables, kpi_config.wip_discipline,
                     tc, start_date, end_date,
                 )
-                kpis.append(wd)
+                kpis.append(wd.model_copy(update={"persons": None}))
                 all_wd_kpis.append(wd)
         team_entries.append(TeamKPIEntry(team_id=report.team_id, kpis=kpis))
 

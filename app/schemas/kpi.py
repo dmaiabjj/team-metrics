@@ -69,7 +69,7 @@ class FlowHygieneKPI(BaseModel):
     display: str = Field(description="Human-readable ratio (e.g. '1.33')")
     rag: RAGStatus
     total_days: int
-    states: list[StateQueueMetric] = Field(default_factory=list)
+    states: list[StateQueueMetric] | None = Field(default_factory=list)
     thresholds: dict[str, str] = Field(
         default_factory=lambda: {
             "green": "<= 1.0",
@@ -85,8 +85,15 @@ class PersonStatusBreakdown(BaseModel):
     peak_items: int = Field(description="Maximum daily items observed")
 
 
+class PersonWorkItem(BaseModel):
+    id: int
+    title: str
+    state: str
+
+
 class PersonWIPMetric(BaseModel):
     person: str
+    role: str = Field(description="developer or qa")
     avg_wip: float = Field(description="Average daily WIP across the period")
     peak_wip: int = Field(description="Maximum daily WIP observed")
     days_compliant: int
@@ -95,17 +102,7 @@ class PersonWIPMetric(BaseModel):
     compliance_pct: float = Field(description="days_compliant / total_days")
     is_compliant: bool = Field(description="True if compliance_pct >= threshold")
     status_breakdown: list[PersonStatusBreakdown] = Field(default_factory=list)
-
-
-class RoleWIPSummary(BaseModel):
-    role: str = Field(description="developer or qa")
-    canonical_status: str
-    wip_limit: int
-    total_persons: int
-    persons_compliant: int
-    persons_over_limit: int
-    compliance_rate: float = Field(description="sum(days_compliant) / (total_persons * total_days)")
-    persons: list[PersonWIPMetric] = Field(default_factory=list)
+    work_items: list[PersonWorkItem] = Field(default_factory=list)
 
 
 class WIPDisciplineKPI(BaseModel):
@@ -114,8 +111,13 @@ class WIPDisciplineKPI(BaseModel):
     display: str = Field(description="Human-readable percentage (e.g. '75.0%')")
     rag: RAGStatus
     total_days: int
-    developers: RoleWIPSummary
-    qas: RoleWIPSummary
+    total_developers: int = 0
+    developers_compliant: int = 0
+    dev_wip_limit: int = 0
+    total_qas: int = 0
+    qas_compliant: int = 0
+    qa_wip_limit: int = 0
+    persons: list[PersonWIPMetric] | None = Field(default_factory=list)
     thresholds: dict[str, str] = Field(
         default_factory=lambda: {
             "green": ">= 80%",

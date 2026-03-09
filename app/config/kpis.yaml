@@ -49,7 +49,7 @@ kpis:
     description: "Percentage of developers/QAs staying within personal WIP limits"
     formula: "compliant_hours / total_hours"
     dev_wip_limit: 3
-    qa_wip_limit: 2
+    qa_wip_limit: 3
     compliance_threshold: 0.80
     rag:
       green_min: 0.80

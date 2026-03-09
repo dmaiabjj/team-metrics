@@ -276,7 +276,7 @@ def test_compute_role_assignments_no_assignee():
 
 
 def test_compute_role_assignments_multiple_developers():
-    """When multiple people are assigned during dev, the one with most time wins."""
+    """When multiple people are assigned during dev, the last one wins."""
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "Active",
                      "System.AssignedTo": "Alice"}},
@@ -286,7 +286,7 @@ def test_compute_role_assignments_multiple_developers():
                      "System.AssignedTo": "Carol"}},
     ]
     dev, qa, rm = _compute_role_assignments(revs, _ROLE_CANONICAL)
-    # Alice: 2 days, Bob: 7 days => Bob wins
+    # Bob is the last person assigned during "Active" -> Bob wins
     assert dev == "Bob"
     assert qa == "Carol"
 
@@ -364,7 +364,8 @@ def test_compute_status_timeline_basic():
 
 
 def test_compute_status_timeline_skips_same_state():
-    """Consecutive revisions in the same state should be deduplicated."""
+    """Consecutive revisions in the same state should be deduplicated,
+    but the assignee should be updated to the latest person."""
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "Active",
                      "System.AssignedTo": "Alice"}},
@@ -376,7 +377,7 @@ def test_compute_status_timeline_skips_same_state():
     timeline = _compute_status_timeline(revs, _ROLE_CANONICAL)
     assert len(timeline) == 2
     assert timeline[0].state == "Active"
-    assert timeline[0].assigned_to == "Alice"  # first occurrence
+    assert timeline[0].assigned_to == "Bob"  # last assignee in that state
     assert timeline[1].state == "In QA"
 
 

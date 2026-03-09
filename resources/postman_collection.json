@@ -317,39 +317,73 @@
       }
     },
     {
-      "name": "Drilldown - WIP Discipline / developer_assignments",
+      "name": "Drilldown - WIP Discipline / developers",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/developer_assignments?start_date={{start_date}}&end_date={{end_date}}",
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/developers?start_date={{start_date}}&end_date={{end_date}}",
           "host": ["{{base_url}}"],
-          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "developer_assignments"],
+          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "developers"],
           "query": [
             {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
             {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
             {"key": "person", "value": "", "description": "Optional: filter to a specific person", "disabled": true}
           ]
         },
-        "description": "Drilldown into developer assignments. Optionally filter by person name."
+        "description": "Drilldown into items with a developer assigned. Optionally filter by person name."
       }
     },
     {
-      "name": "Drilldown - WIP Discipline / qa_assignments",
+      "name": "Drilldown - WIP Discipline / qas",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/qa_assignments?start_date={{start_date}}&end_date={{end_date}}",
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/qas?start_date={{start_date}}&end_date={{end_date}}",
           "host": ["{{base_url}}"],
-          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "qa_assignments"],
+          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "qas"],
           "query": [
             {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
             {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
             {"key": "person", "value": "", "description": "Optional: filter to a specific QA", "disabled": true}
           ]
         },
-        "description": "Drilldown into QA assignments. Optionally filter by person name."
+        "description": "Drilldown into items with a QA assigned. Optionally filter by person name."
+      }
+    },
+    {
+      "name": "Drilldown - WIP Discipline / compliant_gte_80",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/compliant_gte_80?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "compliant_gte_80"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Items assigned to persons with >= 80% WIP compliance."
+      }
+    },
+    {
+      "name": "Drilldown - WIP Discipline / over_wip_limit",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/over_wip_limit?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "over_wip_limit"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Items assigned to persons who exceeded their WIP limit."
       }
     },
     {

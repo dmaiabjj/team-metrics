@@ -262,9 +262,8 @@ def _compute_role_assignments(
 ) -> tuple[str | None, str | None, str | None]:
     """Compute developer, QA, and release_manager from revision history.
 
-    For each consecutive revision pair, the person assigned during that interval
-    accumulates time toward the canonical status of that interval's state.
-    The person with the most accumulated time per role wins.
+    Last-one-wins: the last person assigned while the item is in a canonical
+    status becomes the role holder. Revisions are walked chronologically.
 
     Returns (developer, qa, release_manager).
     """
@@ -276,57 +275,23 @@ def _compute_role_assignments(
     if not sorted_revs:
         return None, None, None
 
-    # Accumulate seconds per person per role
-    # { "developer": {"Alice": 3600, "Bob": 1200}, "qa": {...}, ... }
-    time_by_role: dict[str, dict[str, float]] = {
-        "developer": {},
-        "qa": {},
-        "release_manager": {},
+    last_by_role: dict[str, str | None] = {
+        "developer": None,
+        "qa": None,
+        "release_manager": None,
     }
 
-    for i in range(len(sorted_revs) - 1):
-        rev = sorted_revs[i]
-        next_rev = sorted_revs[i + 1]
-
-        t_start = _parse_revision_date(rev)
-        t_end = _parse_revision_date(next_rev)
-        if t_start is None or t_end is None or t_end <= t_start:
-            continue
-
+    for rev in sorted_revs:
         state = _revision_state(rev)
         canonical = real_to_canonical.get(state)
         role = CANONICAL_TO_ROLE.get(canonical) if canonical else None
         if not role:
             continue
-
         person = _revision_assigned_to(rev)
-        if not person:
-            continue
+        if person:
+            last_by_role[role] = person
 
-        duration = (t_end - t_start).total_seconds()
-        time_by_role[role][person] = time_by_role[role].get(person, 0.0) + duration
-
-    # Also account for time from the last revision to "now" (ongoing assignment)
-    if sorted_revs:
-        last_rev = sorted_revs[-1]
-        state = _revision_state(last_rev)
-        canonical = real_to_canonical.get(state)
-        role = CANONICAL_TO_ROLE.get(canonical) if canonical else None
-        person = _revision_assigned_to(last_rev)
-        if role and person:
-            t_last = _parse_revision_date(last_rev)
-            if t_last:
-                now = datetime.now(timezone.utc)
-                duration = (now - t_last).total_seconds()
-                time_by_role[role][person] = time_by_role[role].get(person, 0.0) + duration
-
-    def _pick_top(role_key: str) -> str | None:
-        people = time_by_role[role_key]
-        if not people:
-            return None
-        return max(people, key=people.get)  # type: ignore[arg-type]
-
-    return _pick_top("developer"), _pick_top("qa"), _pick_top("release_manager")
+    return last_by_role["developer"], last_by_role["qa"], last_by_role["release_manager"]
 
 
 # ---------------------------------------------------------------------------
@@ -348,8 +313,11 @@ def _compute_status_timeline(
     prev_state: str | None = None
     for rev in sorted_revs:
         state = _revision_state(rev)
+        assignee = _revision_assigned_to(rev)
         if state == prev_state:
-            continue  # skip revisions that didn't change the state
+            if assignee and timeline and timeline[-1].assigned_to != assignee:
+                timeline[-1] = timeline[-1].model_copy(update={"assigned_to": assignee})
+            continue
         prev_state = state
         dt = _parse_revision_date(rev)
         if dt is None:
@@ -359,7 +327,7 @@ def _compute_status_timeline(
                 date=dt,
                 state=state,
                 canonical_status=real_to_canonical.get(state),
-                assigned_to=_revision_assigned_to(rev),
+                assigned_to=assignee,
             )
         )
     return timeline

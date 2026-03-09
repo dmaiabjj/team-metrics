@@ -252,7 +252,7 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | `rework-rate`             | `items_reached_qa`, `items_with_rework`, `items_bounced_back`, `items_with_bugs`  |
 | `delivery-predictability` | `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover` |
 | `flow-hygiene`            | `items_in_queue`                                                                  |
-| `wip-discipline`          | `developer_assignments`, `qa_assignments`                                         |
+| `wip-discipline`          | `developers`, `qas`, `compliant_gte_80`, `over_wip_limit`                        |
 
 
 **Response** `200 OK`
@@ -633,11 +633,13 @@ A person is **compliant** if they were at or below their WIP limit for >= 80% of
 
 **Response includes:**
 
-- `developers` / `qas` -- per-role summary with `total_persons`, `persons_compliant`, `persons_over_limit`, `compliance_rate`
-- Each person has: `avg_wip`, `peak_wip`, `days_compliant`, `days_over_limit`, `compliance_pct`, `is_compliant`
+- Summary fields: `total_developers`, `developers_compliant`, `dev_wip_limit`, `total_qas`, `qas_compliant`, `qa_wip_limit`
+- `persons` -- flat list of developers and QAs, each with `role`, `avg_wip`, `peak_wip`, `days_compliant`, `days_over_limit`, `compliance_pct`, `is_compliant`
 - Per-person `status_breakdown` showing average items per real state (e.g., Active: 2.1, Code Review: 0.8)
+- Per-person `work_items` list with `id`, `title`, `state`
+- Note: the `persons` list is stripped from the team KPIs list and dashboard responses; use the KPI detail endpoint for the full response.
 
-**Drilldown** supports `developer_assignments` and `qa_assignments` metrics with an optional `?person=` filter to see items assigned to a specific person.
+**Drilldown** supports `developers`, `qas`, `compliant_gte_80`, and `over_wip_limit` metrics with an optional `?person=` filter.
 
 
 | RAG   | Threshold |

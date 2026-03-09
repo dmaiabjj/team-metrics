@@ -19,9 +19,9 @@ from app.schemas.kpi import (
     FlowHygieneKPI,
     PersonStatusBreakdown,
     PersonWIPMetric,
+    PersonWorkItem,
     RAGStatus,
     ReworkRateKPI,
-    RoleWIPSummary,
     StateQueueMetric,
     WIPDisciplineKPI,
 )
@@ -288,16 +288,15 @@ def _assignee_and_state_on_day(
     return state, canonical, assignee
 
 
-def _build_role_summary(
+def _build_person_metrics(
     person_daily_totals: dict[str, list[int]],
     person_daily_per_state: dict[str, dict[str, list[int]]],
     wip_limit: int,
     compliance_threshold: float,
     total_days: int,
     role: str,
-    canonical_status: str,
-) -> RoleWIPSummary:
-    """Aggregate daily per-person WIP counts into a RoleWIPSummary."""
+) -> list[PersonWIPMetric]:
+    """Aggregate daily per-person WIP counts into PersonWIPMetric objects."""
     persons: list[PersonWIPMetric] = []
     for person, daily_totals in sorted(person_daily_totals.items()):
         avg_wip = sum(daily_totals) / len(daily_totals) if daily_totals else 0.0
@@ -319,6 +318,7 @@ def _build_role_summary(
 
         persons.append(PersonWIPMetric(
             person=person,
+            role=role,
             avg_wip=round(avg_wip, 2),
             peak_wip=peak_wip,
             days_compliant=days_compliant,
@@ -329,21 +329,7 @@ def _build_role_summary(
             status_breakdown=breakdown,
         ))
 
-    total_persons = len(persons)
-    compliant_count = sum(1 for p in persons if p.is_compliant)
-    total_compliant_days = sum(p.days_compliant for p in persons)
-    total_person_days = total_persons * total_days
-    compliance_rate = total_compliant_days / total_person_days if total_person_days > 0 else 1.0
-    return RoleWIPSummary(
-        role=role,
-        canonical_status=canonical_status,
-        wip_limit=wip_limit,
-        total_persons=total_persons,
-        persons_compliant=compliant_count,
-        persons_over_limit=total_persons - compliant_count,
-        compliance_rate=round(compliance_rate, 4),
-        persons=persons,
-    )
+    return persons
 
 
 def compute_wip_discipline(
@@ -368,37 +354,63 @@ def compute_wip_discipline(
     qa_daily_per_state: dict[str, dict[str, list[int]]] = defaultdict(
         lambda: defaultdict(lambda: [0] * total_days)
     )
+    dev_item_ids: dict[str, set[int]] = defaultdict(set)
+    qa_item_ids: dict[str, set[int]] = defaultdict(set)
 
     for day_idx, day in enumerate(days):
         for d in deliverables:
             state, canonical_from_timeline, assignee = _assignee_and_state_on_day(d, day)
-            if state is None or assignee is None:
+            if state is None:
                 continue
+            assignee = assignee or "Unassigned"
             canonical = canonical_from_timeline or real_to_canonical.get(state)
             if canonical == "Development Active":
                 dev_daily_totals[assignee][day_idx] += 1
                 dev_daily_per_state[assignee][state][day_idx] += 1
+                dev_item_ids[assignee].add(d.id)
             elif canonical == "QA Active":
                 qa_daily_totals[assignee][day_idx] += 1
                 qa_daily_per_state[assignee][state][day_idx] += 1
+                qa_item_ids[assignee].add(d.id)
 
-    dev_summary = _build_role_summary(
+    dev_persons = _build_person_metrics(
         dev_daily_totals, dev_daily_per_state,
         config.dev_wip_limit, config.compliance_threshold,
-        total_days, "developer", "Development Active",
+        total_days, "developer",
     )
-    qa_summary = _build_role_summary(
+    qa_persons = _build_person_metrics(
         qa_daily_totals, qa_daily_per_state,
         config.qa_wip_limit, config.compliance_threshold,
-        total_days, "qa", "QA Active",
+        total_days, "qa",
     )
 
-    dev_compliant = sum(p.days_compliant for p in dev_summary.persons)
-    qa_compliant = sum(p.days_compliant for p in qa_summary.persons)
-    dev_total = dev_summary.total_persons * total_days
-    qa_total = qa_summary.total_persons * total_days
-    total_hours = dev_total + qa_total
-    value = (dev_compliant + qa_compliant) / total_hours if total_hours > 0 else 1.0
+    deliverables_by_id = {d.id: d for d in deliverables}
+    for p in dev_persons:
+        p.work_items = [
+            PersonWorkItem(id=d.id, title=d.title, state=d.state or "")
+            for wid in sorted(dev_item_ids.get(p.person, set()))
+            if (d := deliverables_by_id.get(wid)) is not None
+        ]
+    for p in qa_persons:
+        p.work_items = [
+            PersonWorkItem(id=d.id, title=d.title, state=d.state or "")
+            for wid in sorted(qa_item_ids.get(p.person, set()))
+            if (d := deliverables_by_id.get(wid)) is not None
+        ]
+
+    all_persons = dev_persons + qa_persons
+
+    total_dev = len(dev_persons)
+    dev_compliant_count = sum(1 for p in dev_persons if p.is_compliant)
+    total_qa = len(qa_persons)
+    qa_compliant_count = sum(1 for p in qa_persons if p.is_compliant)
+
+    dev_compliant_days = sum(p.days_compliant for p in dev_persons)
+    qa_compliant_days = sum(p.days_compliant for p in qa_persons)
+    dev_total_days = total_dev * total_days
+    qa_total_days = total_qa * total_days
+    total_person_days = dev_total_days + qa_total_days
+    value = (dev_compliant_days + qa_compliant_days) / total_person_days if total_person_days > 0 else 1.0
 
     if value >= config.rag.green_min:
         rag = RAGStatus.GREEN
@@ -415,8 +427,13 @@ def compute_wip_discipline(
         display=f"{value * 100:.1f}%",
         rag=rag,
         total_days=total_days,
-        developers=dev_summary,
-        qas=qa_summary,
+        total_developers=total_dev,
+        developers_compliant=dev_compliant_count,
+        dev_wip_limit=config.dev_wip_limit,
+        total_qas=total_qa,
+        qas_compliant=qa_compliant_count,
+        qa_wip_limit=config.qa_wip_limit,
+        persons=all_persons,
         thresholds={
             "green": f">= {green_pct}",
             "amber": f"{amber_pct}-{green_pct}",
@@ -478,7 +495,7 @@ _FH_METRICS = frozenset({
 })
 
 _WD_METRICS = frozenset({
-    "developer_assignments", "qa_assignments",
+    "developers", "qas", "compliant_gte_80", "over_wip_limit",
 })
 
 VALID_DRILLDOWN_METRICS = _REWORK_METRICS | _DP_METRICS | _FH_METRICS | _WD_METRICS
@@ -490,6 +507,8 @@ def filter_deliverables_by_metric(
     rework_config: ReworkRateConfig | None = None,
     dp_config: DeliveryPredictabilityConfig | None = None,
     fh_config: FlowHygieneConfig | None = None,
+    wd_config: WIPDisciplineConfig | None = None,
+    team_config: TeamConfig | None = None,
     start: date | None = None,
     end: date | None = None,
     person: str | None = None,
@@ -540,17 +559,32 @@ def filter_deliverables_by_metric(
             return [d for d in deliverables if _was_in_queue_states(d, queue_states)]
 
     if metric in _WD_METRICS:
-        if metric == "developer_assignments":
+        if metric == "developers":
             result = [d for d in deliverables if d.developer is not None]
             if person:
                 person_lower = person.lower()
                 result = [d for d in result if (d.developer or "").lower() == person_lower]
             return result
-        if metric == "qa_assignments":
+        if metric == "qas":
             result = [d for d in deliverables if d.qa is not None]
             if person:
                 person_lower = person.lower()
                 result = [d for d in result if (d.qa or "").lower() == person_lower]
             return result
+        if metric in ("compliant_gte_80", "over_wip_limit"):
+            if wd_config is None or team_config is None or start is None or end is None:
+                raise ValueError(
+                    "wd_config, team_config, start, and end required for compliance metrics"
+                )
+            kpi = compute_wip_discipline(deliverables, wd_config, team_config, start, end)
+            if metric == "compliant_gte_80":
+                names = {p.person.lower() for p in kpi.persons if p.is_compliant}
+            else:
+                names = {p.person.lower() for p in kpi.persons if not p.is_compliant}
+            return [
+                d for d in deliverables
+                if (d.developer and d.developer.lower() in names)
+                or (d.qa and d.qa.lower() in names)
+            ]
 
     return []
