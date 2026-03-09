@@ -1,0 +1,12 @@
+kpis:
+  rework_rate:
+    enabled: true
+    description: "Percentage of items that require rework after reaching QA"
+    formula: "items_with_rework / items_reached_qa"
+    rag:
+      green_max: 0.10
+      amber_max: 0.15
+    rework_tags:
+      - "Code Defect"
+      - "Scope / Requirements"
+    qa_canonical_status: "QA Active"

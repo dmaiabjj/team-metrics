@@ -7,7 +7,7 @@ FastAPI service that pulls Azure DevOps work items for configured teams over a d
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate   # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env: set AZURE_DEVOPS_ORG and AZURE_DEVOPS_PAT
 ```
@@ -487,6 +487,157 @@ GET /cache/stats
   "work_item_cache_entries": 87
 }
 ```
+
+---
+
+## Authentication
+
+Set the `API_KEY` environment variable to enable API key authentication. When set, all `/report` and `/cache` endpoints require the `X-API-Key` header. The `/health` endpoint remains open.
+
+```bash
+# .env
+API_KEY=your-secret-key
+```
+
+When `API_KEY` is empty or unset, authentication is disabled (open access).
+
+---
+
+## Rate Limiting
+
+Report endpoints are rate-limited per client IP:
+
+| Endpoint | Limit |
+|----------|-------|
+| `GET /report` | 30 requests/minute |
+| `GET /report/multi` | 10 requests/minute |
+
+Exceeding the limit returns `429 Too Many Requests`.
+
+---
+
+## Pagination
+
+Report endpoints support `skip` and `limit` query parameters:
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| `skip` | 0 | >= 0 | Number of deliverables to skip |
+| `limit` | 100 | 1-500 | Max deliverables to return |
+
+The response includes a `total` field with the full count before pagination.
+
+```
+GET /report?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&skip=0&limit=50
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AZURE_DEVOPS_ORG` | | Azure DevOps organization name |
+| `AZURE_DEVOPS_PAT` | | Personal access token |
+| `API_KEY` | | API key for authentication (empty = disabled) |
+| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `REPORT_TIMEOUT` | `300` | Max seconds for report generation |
+| `REPORT_CACHE_MAX` | `256` | Max L1 cache entries |
+| `WI_CACHE_MAX` | `4096` | Max L2 cache entries |
+| `REVISION_CONCURRENCY` | `20` | Max parallel revision fetches |
+| `HTTP_TIMEOUT` | `60` | Seconds per HTTP request |
+| `HTTP_POOL_SIZE` | `20` | Connection pool size |
+| `MAX_DATE_RANGE_DAYS` | `365` | Max allowed date range |
+
+---
+
+## KPIs
+
+KPIs are computed from the existing report data (no additional Azure DevOps calls). Thresholds are configurable in `app/config/kpis.yaml`.
+
+### `GET /kpi` -- single team
+
+```
+GET /kpi?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31
+```
+
+Response:
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "kpis": [
+    {
+      "name": "rework_rate",
+      "value": 0.10,
+      "display": "10.0%",
+      "rag": "green",
+      "items_with_rework": 5,
+      "items_reached_qa": 50,
+      "items_bounced_back": 3,
+      "total_bugs": 8,
+      "thresholds": {"green": "<= 10%", "amber": "10%-15%", "red": "> 15%"}
+    }
+  ]
+}
+```
+
+### `GET /kpi/summary` -- average across all teams
+
+```
+GET /kpi/summary?start_date=2025-01-01&end_date=2025-01-31
+```
+
+Returns per-KPI averages across all configured teams, plus each team's individual breakdown.
+
+Response:
+
+```json
+{
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "averages": [
+    {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5}
+  ],
+  "teams": [
+    {"team_id": "game-services", "kpis": [{"name": "rework_rate", "value": 0.10, "...": "..."}]},
+    {"team_id": "payment-services", "kpis": [{"name": "rework_rate", "value": 0.06, "...": "..."}]}
+  ]
+}
+```
+
+### `GET /kpi/drilldown` -- work items behind a stat
+
+```
+GET /kpi/drilldown?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&metric=items_with_rework
+```
+
+Returns the full deliverable rows filtered to items matching the metric. Supports `skip`/`limit` pagination.
+
+Available `metric` values:
+
+| Metric | Description |
+|--------|-------------|
+| `items_reached_qa` | Deliverables that were in QA Active at any point |
+| `items_with_rework` | Subset with rework tags (Code Defect or Scope/Requirements) |
+| `items_bounced_back` | Deliverables with bounces > 0 |
+| `items_with_bugs` | Deliverables with at least one linked bug |
+
+### Rework Rate formula
+
+```
+rework_rate = items_with_rework / items_reached_qa
+```
+
+RAG thresholds (configurable in `app/config/kpis.yaml`):
+
+| RAG | Threshold |
+|-----|-----------|
+| Green | <= 10% |
+| Amber | 10-15% |
+| Red | > 15% |
 
 ---
 

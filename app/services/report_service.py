@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.cache import ReportCache, WorkItemCache
-from app.config.loader import TeamConfig, get_team_config, load_teams_config
+from app.config.team_loader import TeamConfig, get_team_config, load_teams_config
 from app.schemas.report import BounceDetail, DeliverableRow, ReportResponse, StatusTimelineEntry, WorkItemRef
 from app.settings import get_settings
 
@@ -685,7 +685,23 @@ async def run_report(
     work_items = await client.get_work_items_batch(team.project, included_ids)
     by_id: dict[int, dict] = {wi["id"]: wi for wi in work_items}
 
-    # Step 4: Enrich each deliverable
+    # Step 4a: Resolve parents concurrently (bounded by semaphore)
+    parent_semaphore = asyncio.Semaphore(settings.revision_concurrency)
+
+    async def _resolve_with_sem(wi: dict) -> tuple[WorkItemRef | None, WorkItemRef | None]:
+        async with parent_semaphore:
+            return await _resolve_parents(client, team.project, wi, team, wi_cache)
+
+    parent_results = await asyncio.gather(
+        *[_resolve_with_sem(wi) for wi in work_items]
+    )
+    parents_by_id: dict[int, tuple[WorkItemRef | None, WorkItemRef | None]] = {}
+    for wi, parent_pair in zip(work_items, parent_results):
+        wid = wi.get("id")
+        if wid:
+            parents_by_id[wid] = parent_pair
+
+    # Step 4b: Enrich each deliverable
     deliverables: list[DeliverableRow] = []
     for wi in work_items:
         wid = wi.get("id")
@@ -694,9 +710,7 @@ async def run_report(
         state = _work_item_state(wi)
         canonical_status = real_to_canonical.get(state) or "Unknown"
 
-        epic_ref, feature_ref = await _resolve_parents(
-            client, team.project, wi, team, wi_cache
-        )
+        epic_ref, feature_ref = parents_by_id.get(wid, (None, None))
         child_bugs, child_tasks = await _collect_children(
             client, team.project, wi, by_id, team, wi_cache
         )
@@ -769,6 +783,7 @@ async def run_report(
         team_id=team_id,
         start_date=start_date,
         end_date=end_date,
+        total=len(deliverables),
         deliverables=deliverables,
     )
     if report_cache is not None:

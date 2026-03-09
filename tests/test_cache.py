@@ -80,6 +80,31 @@ class TestReportCache:
         assert cache.size == 1
         assert cache.get("t1", date(2025, 1, 1), date(2025, 1, 31)) is r2
 
+    def test_lru_eviction(self):
+        cache = ReportCache(maxsize=2)
+        r1 = _make_response("t1")
+        r2 = _make_response("t2")
+        r3 = _make_response("t3")
+        cache.put("t1", date(2025, 1, 1), date(2025, 1, 31), r1)
+        cache.put("t2", date(2025, 1, 1), date(2025, 1, 31), r2)
+        cache.put("t3", date(2025, 1, 1), date(2025, 1, 31), r3)
+        assert cache.size == 2
+        assert cache.get("t1", date(2025, 1, 1), date(2025, 1, 31)) is None
+        assert cache.get("t2", date(2025, 1, 1), date(2025, 1, 31)) is r2
+        assert cache.get("t3", date(2025, 1, 1), date(2025, 1, 31)) is r3
+
+    def test_lru_access_prevents_eviction(self):
+        cache = ReportCache(maxsize=2)
+        r1 = _make_response("t1")
+        r2 = _make_response("t2")
+        r3 = _make_response("t3")
+        cache.put("t1", date(2025, 1, 1), date(2025, 1, 31), r1)
+        cache.put("t2", date(2025, 1, 1), date(2025, 1, 31), r2)
+        cache.get("t1", date(2025, 1, 1), date(2025, 1, 31))  # touch t1
+        cache.put("t3", date(2025, 1, 1), date(2025, 1, 31), r3)  # evicts t2
+        assert cache.get("t1", date(2025, 1, 1), date(2025, 1, 31)) is r1
+        assert cache.get("t2", date(2025, 1, 1), date(2025, 1, 31)) is None
+
 
 # ---------------------------------------------------------------------------
 # WorkItemCache (L2)
@@ -116,3 +141,13 @@ class TestWorkItemCache:
         assert cache.size == 0
         cache.put("proj", 1, {"id": 1})
         assert cache.size == 1
+
+    def test_lru_eviction(self):
+        cache = WorkItemCache(maxsize=2)
+        cache.put("proj", 1, {"id": 1})
+        cache.put("proj", 2, {"id": 2})
+        cache.put("proj", 3, {"id": 3})
+        assert cache.size == 2
+        assert cache.get("proj", 1) is None
+        assert cache.get("proj", 2) is not None
+        assert cache.get("proj", 3) is not None

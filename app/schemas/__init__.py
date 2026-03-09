@@ -1,3 +1,23 @@
-from .report import ReportRequest, ReportResponse, DeliverableRow, TeamReportResponse
+from .report import (
+    BounceDetail,
+    DeliverableRow,
+    ErrorResponse,
+    MultiTeamReportResponse,
+    ReportRequest,
+    ReportResponse,
+    StatusTimelineEntry,
+    TeamReportResponse,
+    WorkItemRef,
+)
 
-__all__ = ["ReportRequest", "ReportResponse", "DeliverableRow", "TeamReportResponse"]
+__all__ = [
+    "BounceDetail",
+    "DeliverableRow",
+    "ErrorResponse",
+    "MultiTeamReportResponse",
+    "ReportRequest",
+    "ReportResponse",
+    "StatusTimelineEntry",
+    "TeamReportResponse",
+    "WorkItemRef",
+]

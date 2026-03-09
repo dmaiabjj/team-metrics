@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.config.loader import load_teams_config
+from app.config.team_loader import load_teams_config
 from app.services.report_service import (
     _apply_inclusion,
     _collect_children,

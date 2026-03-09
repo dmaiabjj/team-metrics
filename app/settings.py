@@ -21,8 +21,21 @@ class Settings(BaseSettings):
     retry_max_attempts: int = 3
     retry_wait_seconds: float = 1.0  # initial backoff
 
+    # Cache limits
+    report_cache_max: int = 256
+    wi_cache_max: int = 4096
+
+    # Request timeout (overall report generation)
+    report_timeout: float = 300.0  # seconds
+
     # Validation
     max_date_range_days: int = 365
+
+    # Logging
+    log_level: str = "INFO"
+
+    # Security
+    api_key: str = ""
 
 
 @lru_cache(maxsize=1)

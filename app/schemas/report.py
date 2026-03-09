@@ -92,6 +92,7 @@ class ReportResponse(BaseModel):
     team_id: str
     start_date: date
     end_date: date
+    total: int = Field(0, description="Total number of deliverables before pagination.")
     deliverables: list[DeliverableRow] = Field(default_factory=list)
 
 
