@@ -94,7 +94,8 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "qa": "Bob Jones",
       "release_manager": "Carol White",
       "has_rework": true,
-      "rework_reasons": ["linked_bug"]
+      "is_spillover": false,
+      "tags": ["Code Defect"]
     },
     {
       "id": 12349,
@@ -116,7 +117,8 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "qa": null,
       "release_manager": null,
       "has_rework": false,
-      "rework_reasons": []
+      "is_spillover": true,
+      "tags": ["Spillover"]
     }
   ]
 }
@@ -183,7 +185,8 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           "parent_epic_title": null,
           "parent_feature_title": "Payment MVP",
           "has_rework": true,
-          "rework_reasons": ["linked_bug"],
+          "is_spillover": false,
+          "tags": ["Code Defect"],
           "child_bug_ids": [12346],
           "child_task_ids": [12347, 12348],
           "developer": "Alice Smith",
@@ -211,7 +214,8 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           "parent_epic_title": null,
           "parent_feature_title": "Refunds",
           "has_rework": false,
-          "rework_reasons": [],
+          "is_spillover": true,
+          "tags": ["Spillover"],
           "child_bug_ids": [],
           "child_task_ids": [12401],
           "developer": "Dave Brown",
@@ -267,19 +271,25 @@ Values are `null` when no one was assigned during the corresponding phase.
 
 ---
 
-## Rework
+## Tags & Rework
 
-Each deliverable includes rework flags derived from revision history and links:
+Each deliverable includes a `tags` list, `has_rework`, and `is_spillover` booleans:
 
 | Field | Description |
 |-------|-------------|
-| `has_rework` | `true` if the item has rework (see below) |
-| `rework_reasons` | List of reasons: `linked_bug`, `returned_to_active` |
+| `has_rework` | `true` if any rework tag is present (`Code Defect` or `Scope / Requirements`) |
+| `is_spillover` | `true` if the item was already in dev or QA at the start of the period |
+| `tags` | List of tags assigned to the deliverable (see below) |
 
-**Rework is set when either:**
+**Available tags:**
 
-1. **Linked bug** – The work item has one or more child bugs (`child_bug_ids` non-empty).
-2. **Returned to active** – The item reached **QA Active** or **Delivered** in its revision history and was later moved back to **Development Active** or **Backlog** (e.g. sent back from QA or reopened after close).
+| Tag | Condition |
+|-----|-----------|
+| `Code Defect` | The work item has one or more linked child bugs (`child_bug_ids` non-empty). |
+| `Scope / Requirements` | The item reached **QA Active** or **Delivered** and was later moved back to **Development Active** or **Backlog**. |
+| `Spillover` | The item was in **Development Active** or **QA Active** at the start of the queried period (`status_at_start`). |
+
+A deliverable can have multiple tags simultaneously (e.g. both `Code Defect` and `Spillover`).
 
 ---
 

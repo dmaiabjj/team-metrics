@@ -285,18 +285,27 @@ def _compute_status_timeline(
     return timeline
 
 
-def _compute_rework(
+TAG_CODE_DEFECT = "Code Defect"
+TAG_SCOPE_REQUIREMENTS = "Scope / Requirements"
+TAG_SPILLOVER = "Spillover"
+
+
+def _compute_tags(
     revisions: list[dict],
     real_to_canonical: dict[str, str],
     child_bug_ids: list[int],
-) -> tuple[bool, list[str]]:
-    """Determine if the work item has rework: linked bug(s) or returned to active after QA/Delivered.
+    status_at_start: str | None,
+) -> tuple[bool, bool, list[str]]:
+    """Compute deliverable tags, has_rework, and is_spillover.
 
-    Returns (has_rework, rework_reasons). Reasons are 'linked_bug' and/or 'returned_to_active'.
+    Tags: 'Code Defect' (linked bugs), 'Scope / Requirements' (returned to active after QA/Delivered),
+    'Spillover' (in Development Active or QA Active before the period).
+    has_rework is True when 'Code Defect' or 'Scope / Requirements' is in tags.
+    Returns (has_rework, is_spillover, tags).
     """
-    reasons: list[str] = []
+    tags: list[str] = []
     if child_bug_ids:
-        reasons.append("linked_bug")
+        tags.append(TAG_CODE_DEFECT)
 
     _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
     sorted_revs = sorted(
@@ -310,10 +319,17 @@ def _compute_rework(
         if canon in ("QA Active", "Delivered"):
             seen_qa_or_delivered = True
         if seen_qa_or_delivered and canon in ("Development Active", "Backlog"):
-            reasons.append("returned_to_active")
+            tags.append(TAG_SCOPE_REQUIREMENTS)
             break
 
-    return bool(reasons), reasons
+    if status_at_start is not None:
+        canon_start = real_to_canonical.get(status_at_start)
+        if canon_start in ("Development Active", "QA Active"):
+            tags.append(TAG_SPILLOVER)
+
+    has_rework = TAG_CODE_DEFECT in tags or TAG_SCOPE_REQUIREMENTS in tags
+    is_spillover = TAG_SPILLOVER in tags
+    return has_rework, is_spillover, tags
 
 
 def _compute_boundary_statuses(
@@ -544,7 +560,7 @@ async def run_report(
         developer, qa, release_manager = _compute_role_assignments(revs, real_to_canonical)
         status_timeline = _compute_status_timeline(revs, real_to_canonical)
         status_at_start, status_at_end = _compute_boundary_statuses(revs, start_dt, end_dt)
-        has_rework, rework_reasons = _compute_rework(revs, real_to_canonical, child_bug_ids)
+        has_rework, is_spillover, tags = _compute_tags(revs, real_to_canonical, child_bug_ids, status_at_start)
 
         deliverables.append(
             DeliverableRow(
@@ -565,7 +581,8 @@ async def run_report(
                 qa=qa,
                 release_manager=release_manager,
                 has_rework=has_rework,
-                rework_reasons=rework_reasons,
+                is_spillover=is_spillover,
+                tags=tags,
             )
         )
 

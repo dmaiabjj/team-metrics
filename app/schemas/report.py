@@ -35,11 +35,15 @@ class DeliverableRow(BaseModel):
     release_manager: str | None = None
     has_rework: bool = Field(
         default=False,
-        description="True if the item has a linked bug or was returned to active after reaching QA/Delivered.",
+        description="True if the item has tag 'Code Defect' or 'Scope / Requirements'.",
     )
-    rework_reasons: list[str] = Field(
+    is_spillover: bool = Field(
+        default=False,
+        description="True if the item was in Development Active or QA Active at the start of the period.",
+    )
+    tags: list[str] = Field(
         default_factory=list,
-        description="Reasons rework was flagged: 'linked_bug', 'returned_to_active'.",
+        description="Tags: 'Code Defect' (linked bugs), 'Scope / Requirements' (returned to active after QA/Delivered), 'Spillover' (in dev or QA before period).",
     )
 
 

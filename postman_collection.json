@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Azure DevOps Performance Report API",
-    "description": "Performance report endpoints for team deliverables and date range. Each deliverable has canonical_status (Development Active, QA Active, Delivered, Backlog), has_rework (true if linked bugs or returned to active after QA/Delivered), and rework_reasons (linked_bug, returned_to_active).",
+    "description": "Performance report endpoints for team deliverables and date range. Each deliverable includes tags (Code Defect, Scope / Requirements, Spillover) and has_rework (true when Code Defect or Scope / Requirements is present).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -67,7 +67,7 @@
             }
           ]
         },
-        "description": "Get performance report for one team and date range. Returns deliverables with description, status timeline, period boundary statuses, hierarchy, linked bugs/tasks, role assignments (developer, qa, release_manager), and rework flags (has_rework, rework_reasons)."
+        "description": "Get performance report for one team and date range. Returns deliverables with description, status timeline, period boundary statuses, hierarchy, linked bugs/tasks, role assignments (developer, qa, release_manager), tags (Code Defect, Scope / Requirements, Spillover), and has_rework."
       }
     },
     {
@@ -97,7 +97,7 @@
             }
           ]
         },
-        "description": "Get performance report for multiple teams. Returns { teams: [ { team_id, deliverables }, ... ] }. Each deliverable includes description, status timeline, period boundary statuses, role assignments, and rework flags (has_rework, rework_reasons)."
+        "description": "Get performance report for multiple teams. Returns { teams: [ { team_id, deliverables }, ... ] }. Each deliverable includes description, status timeline, period boundary statuses, role assignments, tags (Code Defect, Scope / Requirements, Spillover), and has_rework."
       }
     }
   ]
