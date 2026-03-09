@@ -79,6 +79,9 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "description": "<div>Build the full checkout flow for payment processing.</div>",
       "state": "Closed",
       "canonical_status": "Delivered",
+      "date_created": "2024-12-10T09:00:00Z",
+      "start_date": "2024-12-15T10:00:00Z",
+      "finish_date": "2025-01-20T09:00:00Z",
       "status_at_start": "Active",
       "status_at_end": "Closed",
       "status_timeline": [
@@ -110,6 +113,9 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "description": null,
       "state": "In Progress",
       "canonical_status": "Development Active",
+      "date_created": "2024-12-18T09:00:00Z",
+      "start_date": "2024-12-20T08:00:00Z",
+      "finish_date": null,
       "status_at_start": "In QA",
       "status_at_end": "Active",
       "status_timeline": [
@@ -191,6 +197,9 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           "description": "<div>Build the full checkout flow.</div>",
           "state": "Closed",
           "canonical_status": "Delivered",
+          "date_created": "2024-12-10T09:00:00Z",
+          "start_date": "2024-12-15T10:00:00Z",
+          "finish_date": "2025-01-20T09:00:00Z",
           "status_at_start": "Active",
           "status_at_end": "Closed",
           "status_timeline": [
@@ -226,6 +235,9 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
           "description": "Implement refund processing via API.",
           "state": "In Testing",
           "canonical_status": "QA Active",
+          "date_created": "2024-12-18T09:00:00Z",
+          "start_date": "2024-12-20T11:00:00Z",
+          "finish_date": null,
           "status_at_start": "Active",
           "status_at_end": "In QA",
           "status_timeline": [

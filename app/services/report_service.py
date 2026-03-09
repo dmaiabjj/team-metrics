@@ -107,13 +107,35 @@ def _extract_relation_target_id(rel: dict) -> int | None:
 # Delivery days: creation → first Delivered state
 # ---------------------------------------------------------------------------
 
-def _compute_delivery_days(
+class _LifecycleDates:
+    __slots__ = ("date_created", "start_date", "finish_date", "delivery_days")
+
+    def __init__(
+        self,
+        date_created: datetime | None = None,
+        start_date: datetime | None = None,
+        finish_date: datetime | None = None,
+        delivery_days: float | None = None,
+    ):
+        self.date_created = date_created
+        self.start_date = start_date
+        self.finish_date = finish_date
+        self.delivery_days = delivery_days
+
+
+ACTIVE_CANONICAL_SET = frozenset({"Development Active", "QA Active"})
+
+
+def _compute_lifecycle_dates(
     revisions: list[dict],
     real_to_canonical: dict[str, str],
-) -> float | None:
-    """Calendar days from item creation (rev 1) to first revision in Delivered.
+) -> _LifecycleDates:
+    """Extract key lifecycle timestamps from revision history.
 
-    Returns None if the item never reached a Delivered state.
+    date_created: timestamp of the first revision (creation).
+    start_date: timestamp when the item first entered Development Active or QA Active.
+    finish_date: timestamp of the last time the item entered Delivered (accounts for bounces).
+    delivery_days: calendar days from date_created to finish_date (None if not delivered).
     """
     _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
     sorted_revs = sorted(
@@ -121,20 +143,37 @@ def _compute_delivery_days(
         key=lambda r: _parse_revision_date(r) or _min_dt,
     )
     if not sorted_revs:
-        return None
+        return _LifecycleDates()
 
     created_dt = _parse_revision_date(sorted_revs[0])
-    if created_dt is None:
-        return None
+    first_active_dt: datetime | None = None
+    last_delivered_dt: datetime | None = None
+    prev_state: str | None = None
 
     for rev in sorted_revs:
         state = _revision_state(rev)
-        if real_to_canonical.get(state) == "Delivered":
-            delivered_dt = _parse_revision_date(rev)
-            if delivered_dt is not None:
-                delta = delivered_dt - created_dt
-                return round(delta.total_seconds() / 86400, 2)
-    return None
+        if state == prev_state:
+            continue
+        prev_state = state
+        canon = real_to_canonical.get(state)
+        dt = _parse_revision_date(rev)
+        if dt is None:
+            continue
+        if first_active_dt is None and canon in ACTIVE_CANONICAL_SET:
+            first_active_dt = dt
+        if canon == "Delivered":
+            last_delivered_dt = dt
+
+    delivery_days: float | None = None
+    if created_dt and last_delivered_dt:
+        delivery_days = round((last_delivered_dt - created_dt).total_seconds() / 86400, 2)
+
+    return _LifecycleDates(
+        date_created=created_dt,
+        start_date=first_active_dt,
+        finish_date=last_delivered_dt,
+        delivery_days=delivery_days,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -648,13 +687,13 @@ async def run_report(
             parent_epic_id is not None and parent_epic_id in team.post_mortem_epic_ids
         )
 
-        delivery_days = _compute_delivery_days(revs, real_to_canonical)
+        lifecycle = _compute_lifecycle_dates(revs, real_to_canonical)
 
         post_mortem_sla_met: bool | None = None
         if is_post_mortem and team.post_mortem_sla_weeks is not None:
-            if delivery_days is not None:
+            if lifecycle.delivery_days is not None:
                 sla_days = team.post_mortem_sla_weeks * 7
-                post_mortem_sla_met = delivery_days <= sla_days
+                post_mortem_sla_met = lifecycle.delivery_days <= sla_days
             else:
                 post_mortem_sla_met = False
 
@@ -666,6 +705,9 @@ async def run_report(
                 description=_work_item_description(wi),
                 state=state,
                 canonical_status=canonical_status if canonical_status != "Unknown" else None,
+                date_created=lifecycle.date_created,
+                start_date=lifecycle.start_date,
+                finish_date=lifecycle.finish_date,
                 status_at_start=status_at_start,
                 status_at_end=status_at_end,
                 status_timeline=status_timeline,
@@ -683,7 +725,7 @@ async def run_report(
                 is_technical_debt=is_technical_debt,
                 is_post_mortem=is_post_mortem,
                 post_mortem_sla_met=post_mortem_sla_met,
-                delivery_days=delivery_days,
+                delivery_days=lifecycle.delivery_days,
                 tags=tags,
             )
         )

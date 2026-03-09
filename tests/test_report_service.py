@@ -10,7 +10,7 @@ from app.services.report_service import (
     _collect_children,
     _compute_bounces,
     _compute_boundary_statuses,
-    _compute_delivery_days,
+    _compute_lifecycle_dates,
     _compute_tags,
     _compute_role_assignments,
     _compute_status_timeline,
@@ -566,41 +566,102 @@ def test_tags_combined_code_defect_and_spillover():
 
 
 # ---------------------------------------------------------------------------
-# Delivery days
+# Lifecycle dates
 # ---------------------------------------------------------------------------
 
 
-def test_delivery_days_basic():
+def test_lifecycle_dates_full():
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
         {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
         {"fields": {"System.ChangedDate": "2025-01-15T00:00:00Z", "System.State": "Closed"}},
     ]
-    days = _compute_delivery_days(revs, _TAG_CANONICAL)
-    assert days == 14.0
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.date_created == datetime(2025, 1, 1, tzinfo=_utc)
+    assert lc.start_date == datetime(2025, 1, 5, tzinfo=_utc)
+    assert lc.finish_date == datetime(2025, 1, 15, tzinfo=_utc)
+    assert lc.delivery_days == 14.0
 
 
-def test_delivery_days_never_delivered():
+def test_lifecycle_dates_never_delivered():
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
         {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
     ]
-    days = _compute_delivery_days(revs, _TAG_CANONICAL)
-    assert days is None
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.date_created == datetime(2025, 1, 1, tzinfo=_utc)
+    assert lc.start_date == datetime(2025, 1, 5, tzinfo=_utc)
+    assert lc.finish_date is None
+    assert lc.delivery_days is None
 
 
-def test_delivery_days_empty():
-    assert _compute_delivery_days([], _TAG_CANONICAL) is None
+def test_lifecycle_dates_never_active():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
+    ]
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.date_created == datetime(2025, 1, 1, tzinfo=_utc)
+    assert lc.start_date is None
+    assert lc.finish_date is None
 
 
-def test_delivery_days_delivered_same_day():
+def test_lifecycle_dates_empty():
+    lc = _compute_lifecycle_dates([], _TAG_CANONICAL)
+    assert lc.date_created is None
+    assert lc.start_date is None
+    assert lc.finish_date is None
+    assert lc.delivery_days is None
+
+
+def test_lifecycle_dates_same_day():
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "New"}},
         {"fields": {"System.ChangedDate": "2025-01-10T18:00:00Z", "System.State": "Closed"}},
     ]
-    days = _compute_delivery_days(revs, _TAG_CANONICAL)
-    assert days is not None
-    assert days < 1.0
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.date_created == datetime(2025, 1, 10, 10, 0, tzinfo=_utc)
+    assert lc.start_date is None  # never went through active
+    assert lc.finish_date == datetime(2025, 1, 10, 18, 0, tzinfo=_utc)
+    assert lc.delivery_days is not None
+    assert lc.delivery_days < 1.0
+
+
+def test_lifecycle_start_date_from_qa():
+    """start_date picks up QA Active if that's the first active canonical."""
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
+        {"fields": {"System.ChangedDate": "2025-01-08T00:00:00Z", "System.State": "In Review"}},
+    ]
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.start_date == datetime(2025, 1, 8, tzinfo=_utc)
+
+
+def test_lifecycle_finish_date_uses_last_delivered():
+    """finish_date is the last time the item reached Delivered, not the first."""
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
+        {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-10T00:00:00Z", "System.State": "Closed"}},
+        {"fields": {"System.ChangedDate": "2025-01-12T00:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-20T00:00:00Z", "System.State": "Closed"}},
+    ]
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.finish_date == datetime(2025, 1, 20, tzinfo=_utc)
+    assert lc.delivery_days == 19.0
+
+
+def test_lifecycle_ignores_non_state_change_revisions():
+    """Revisions that don't change state (e.g. assignee edit) must not move finish_date."""
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
+        {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-10T00:00:00Z", "System.State": "Closed"}},
+        {"fields": {"System.ChangedDate": "2025-01-15T00:00:00Z", "System.State": "Closed"}},
+        {"fields": {"System.ChangedDate": "2025-01-18T00:00:00Z", "System.State": "Closed"}},
+    ]
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.finish_date == datetime(2025, 1, 10, tzinfo=_utc)
+    assert lc.delivery_days == 9.0
 
 
 # ---------------------------------------------------------------------------

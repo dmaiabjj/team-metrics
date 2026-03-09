@@ -37,6 +37,9 @@ class DeliverableRow(BaseModel):
     description: str | None = None
     state: str
     canonical_status: str | None = None
+    date_created: datetime | None = None
+    start_date: datetime | None = None
+    finish_date: datetime | None = None
     status_at_start: str | None = None
     status_at_end: str | None = None
     status_timeline: list[StatusTimelineEntry] = Field(default_factory=list)
