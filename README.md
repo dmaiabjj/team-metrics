@@ -22,6 +22,71 @@ Base URL (local): `http://localhost:8000`
 
 ---
 
+## Architecture
+
+### API Request Flow
+
+```mermaid
+flowchart LR
+    Client["Client"] --> FastAPI["FastAPI"]
+    FastAPI --> ReportRouter["/report"]
+    FastAPI --> CacheRouter["/cache"]
+    FastAPI --> HealthRouter["/health"]
+
+    ReportRouter --> RunReport["run_report()"]
+
+    RunReport --> Step1["1. WIQL Query"]
+    Step1 --> Step2["2. Fetch Revisions"]
+    Step2 --> Step3["3. Batch Work Items"]
+    Step3 --> Step4["4. Enrich Deliverables"]
+
+    Step4 --> Parents["Resolve Parents"]
+    Step4 --> Children["Collect Children"]
+    Step4 --> Compute["Compute Metrics"]
+
+    Step1 --> AzureDevOps["Azure DevOps API"]
+    Step2 --> AzureDevOps
+    Step3 --> AzureDevOps
+    Parents --> AzureDevOps
+    Children --> AzureDevOps
+```
+
+### Caching Layer
+
+```mermaid
+flowchart TD
+    Request["GET /report"] --> L1Check{"L1 Report Cache"}
+    L1Check -->|"HIT"| ReturnCached["Return Cached Response"]
+    L1Check -->|"MISS"| Pipeline["Report Pipeline"]
+
+    Pipeline --> WIQL["WIQL Query"]
+    WIQL --> Revisions["Concurrent Revision Fetches"]
+    Revisions --> Batch["Batch Work Items"]
+    Batch --> Enrich["Enrich Each Deliverable"]
+
+    Enrich --> L2Check{"L2 Work Item Cache"}
+    L2Check -->|"HIT"| UseCache["Use Cached Work Item"]
+    L2Check -->|"MISS"| FetchADO["Fetch from Azure DevOps"]
+    FetchADO --> StoreL2["Store in L2 Cache"]
+
+    Enrich --> StoreL1["Store Response in L1 Cache"]
+    StoreL1 --> ReturnFresh["Return Fresh Response"]
+
+    Invalidate["DELETE /cache"] --> ClearAll["Clear L1 + L2"]
+    InvalidateTeam["DELETE /cache/team_id"] --> ClearTeam["Clear L1 for Team"]
+```
+
+The two cache layers target different bottlenecks:
+
+| Layer | Key | Scope | Effect |
+|-------|-----|-------|--------|
+| L1 (Report) | `(team_id, start_date, end_date)` | Full response | Repeated identical queries: 0 API calls |
+| L2 (Work Item) | `(project, work_item_id)` | Individual items | Shared epics/features fetched once across deliverables |
+
+Both are in-memory, persist until process restart, and support manual invalidation via the `/cache` endpoints.
+
+---
+
 ## Endpoints
 
 ### Health
