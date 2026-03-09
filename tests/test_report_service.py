@@ -637,7 +637,7 @@ def test_lifecycle_start_date_from_qa():
 
 
 def test_lifecycle_finish_date_uses_last_delivered():
-    """finish_date is the last time the item reached Delivered, not the first."""
+    """finish_date is the last Delivered date when the item ends in Delivered."""
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
         {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
@@ -648,6 +648,19 @@ def test_lifecycle_finish_date_uses_last_delivered():
     lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
     assert lc.finish_date == datetime(2025, 1, 20, tzinfo=_utc)
     assert lc.delivery_days == 19.0
+
+
+def test_lifecycle_finish_date_none_after_bounce_back():
+    """finish_date is None when the item bounced back from Delivered and stayed active."""
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
+        {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-10T00:00:00Z", "System.State": "Closed"}},
+        {"fields": {"System.ChangedDate": "2025-01-12T00:00:00Z", "System.State": "Active"}},
+    ]
+    lc = _compute_lifecycle_dates(revs, _TAG_CANONICAL)
+    assert lc.finish_date is None
+    assert lc.delivery_days is None
 
 
 def test_lifecycle_ignores_non_state_change_revisions():

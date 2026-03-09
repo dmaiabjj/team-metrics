@@ -134,7 +134,8 @@ def _compute_lifecycle_dates(
 
     date_created: timestamp of the first revision (creation).
     start_date: timestamp when the item first entered Development Active or QA Active.
-    finish_date: timestamp of the last time the item entered Delivered (accounts for bounces).
+    finish_date: latest date the item entered Delivered, only if the item's final
+                 state is still Delivered. If it bounced back, finish_date is None.
     delivery_days: calendar days from date_created to finish_date (None if not delivered).
     """
     _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -149,6 +150,7 @@ def _compute_lifecycle_dates(
     first_active_dt: datetime | None = None
     last_delivered_dt: datetime | None = None
     prev_state: str | None = None
+    final_canon: str | None = None
 
     for rev in sorted_revs:
         state = _revision_state(rev)
@@ -156,6 +158,7 @@ def _compute_lifecycle_dates(
             continue
         prev_state = state
         canon = real_to_canonical.get(state)
+        final_canon = canon
         dt = _parse_revision_date(rev)
         if dt is None:
             continue
@@ -163,6 +166,9 @@ def _compute_lifecycle_dates(
             first_active_dt = dt
         if canon == "Delivered":
             last_delivered_dt = dt
+
+    if final_canon != "Delivered":
+        last_delivered_dt = None
 
     delivery_days: float | None = None
     if created_dt and last_delivered_dt:
