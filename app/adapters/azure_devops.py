@@ -101,6 +101,11 @@ class AzureDevOpsClient:
             auth=self._auth,
             headers=self._headers(),
         )
+        # #region agent log
+        if r.status_code >= 400:
+            import json as _json; _log_path = "/Volumes/Personal Data/VenturesLab/ai/team_metrics/.cursor/debug-79de70.log"
+            with open(_log_path, "a") as _f: _f.write(_json.dumps({"sessionId":"79de70","hypothesisId":"A,B,C","location":"azure_devops.py:wiql_query","message":"WIQL 400+ error","data":{"project":project,"url":url,"status":r.status_code,"response_text":r.text[:500],"wiql":wiql,"area_paths":area_paths},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
         r.raise_for_status()
         data = r.json()
         work_items = data.get("workItems") or []
@@ -122,6 +127,11 @@ class AzureDevOpsClient:
             auth=self._auth,
             headers=self._headers(),
         )
+        # #region agent log
+        if r.status_code >= 400:
+            import json as _json; _log_path = "/Volumes/Personal Data/VenturesLab/ai/team_metrics/.cursor/debug-79de70.log"
+            with open(_log_path, "a") as _f: _f.write(_json.dumps({"sessionId":"79de70","hypothesisId":"E","location":"azure_devops.py:get_revisions","message":"Revisions 400+ error","data":{"project":project,"work_item_id":work_item_id,"url":url,"status":r.status_code,"response_text":r.text[:500]},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
         r.raise_for_status()
         data = r.json()
         return data.get("value") or []
@@ -149,6 +159,11 @@ class AzureDevOpsClient:
         )
         if r.status_code == 404:
             return None
+        # #region agent log
+        if r.status_code >= 400:
+            import json as _json; _log_path = "/Volumes/Personal Data/VenturesLab/ai/team_metrics/.cursor/debug-79de70.log"
+            with open(_log_path, "a") as _f: _f.write(_json.dumps({"sessionId":"79de70","hypothesisId":"E","location":"azure_devops.py:get_work_item","message":"WorkItem 400+ error","data":{"project":project,"work_item_id":work_item_id,"url":url,"status":r.status_code,"response_text":r.text[:500]},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
         r.raise_for_status()
         return r.json()
 
@@ -180,6 +195,11 @@ class AzureDevOpsClient:
                 auth=self._auth,
                 headers=self._headers(),
             )
+            # #region agent log
+            if r.status_code >= 400:
+                import json as _json; _log_path = "/Volumes/Personal Data/VenturesLab/ai/team_metrics/.cursor/debug-79de70.log"
+                with open(_log_path, "a") as _f: _f.write(_json.dumps({"sessionId":"79de70","hypothesisId":"E","location":"azure_devops.py:get_work_items_batch","message":"Batch 400+ error","data":{"project":project,"ids_sample":batch[:5],"url":url,"status":r.status_code,"response_text":r.text[:500]},"timestamp":__import__("time").time()}) + "\n")
+            # #endregion
             r.raise_for_status()
             data = r.json()
             result.extend(data.get("value") or [])

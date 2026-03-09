@@ -88,10 +88,10 @@ teams:
       - "payment-services\\frontend\\legacy-web"
       - "payment-services\\frontend\\payment-admin-ui"
       - "payment-services\\frontend\\payment-backoffice"
-      - "payment-services\\integration\\dod"
+      # "payment-services\\integration\\dod"  -- removed: area path does not exist in Azure DevOps (TF51011)
       - "payment-services\\operations\\alerts"
       - "payment-services\\operations\\hot-issues"
-      - "payment-services\\operations\\suport-tickets"
+      - "payment-services\\operations\\support-tickets"
     deliverable_types:
       - "User Story"
       - "Issue"

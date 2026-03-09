@@ -20,6 +20,7 @@ from app.schemas.kpi import (
     DrilldownResponse,
     KPIResponse,
     KPISummaryResponse,
+    TeamError,
     TeamKPIEntry,
 )
 from app.schemas.report import ErrorResponse
@@ -118,16 +119,18 @@ async def get_kpi_summary(
     settings = get_settings()
     kpi_config = load_kpi_config()
 
+    team_ids = list(teams.keys())
     try:
-        reports = await asyncio.wait_for(
+        results = await asyncio.wait_for(
             asyncio.gather(
                 *[
                     run_report(
                         tid, start_date, end_date, client, teams,
                         report_cache=report_cache, wi_cache=wi_cache,
                     )
-                    for tid in teams
-                ]
+                    for tid in team_ids
+                ],
+                return_exceptions=True,
             ),
             timeout=settings.report_timeout,
         )
@@ -138,9 +141,15 @@ async def get_kpi_summary(
         )
 
     team_entries: list[TeamKPIEntry] = []
+    team_errors: list[TeamError] = []
     all_rework_kpis = []
 
-    for report in reports:
+    for tid, result in zip(team_ids, results):
+        if isinstance(result, Exception):
+            logger.warning("Team %s failed: %s", tid, result)
+            team_errors.append(TeamError(team_id=tid, error=str(result)))
+            continue
+        report = result
         kpis = []
         if kpi_config.rework_rate.enabled:
             rw = compute_rework_rate(report.deliverables, kpi_config.rework_rate)
@@ -159,6 +168,7 @@ async def get_kpi_summary(
         end_date=end_date,
         averages=averages,
         teams=team_entries,
+        errors=team_errors,
     )
 
 

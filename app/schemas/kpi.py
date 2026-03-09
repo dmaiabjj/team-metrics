@@ -54,11 +54,17 @@ class AverageKPI(BaseModel):
     team_count: int
 
 
+class TeamError(BaseModel):
+    team_id: str
+    error: str
+
+
 class KPISummaryResponse(BaseModel):
     start_date: date
     end_date: date
     averages: list[AverageKPI] = Field(default_factory=list)
     teams: list[TeamKPIEntry] = Field(default_factory=list)
+    errors: list[TeamError] = Field(default_factory=list, description="Teams that failed")
 
 
 class DrilldownResponse(BaseModel):
