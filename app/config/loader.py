@@ -17,6 +17,9 @@ class TeamConfig(BaseModel):
     container_types: list[str] = Field(default_factory=list)
     bug_types: list[str] = Field(default_factory=list)
     states: list[StateMapping] = Field(default_factory=list)
+    tech_debt_epic_ids: list[int] = Field(default_factory=list)
+    post_mortem_epic_ids: list[int] = Field(default_factory=list)
+    post_mortem_sla_weeks: int | None = None
 
     def normalize(self) -> "TeamConfig":
         def norm(s: str) -> str:
@@ -38,6 +41,9 @@ class TeamConfig(BaseModel):
                 )
                 for s in self.states
             ],
+            tech_debt_epic_ids=self.tech_debt_epic_ids,
+            post_mortem_epic_ids=self.post_mortem_epic_ids,
+            post_mortem_sla_weeks=self.post_mortem_sla_weeks,
         )
 
     def real_state_to_canonical(self) -> dict[str, str]:

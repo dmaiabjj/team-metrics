@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.config.loader import TeamConfig, get_team_config, load_teams_config
-from app.schemas.report import BounceDetail, DeliverableRow, ReportResponse, StatusTimelineEntry
+from app.schemas.report import BounceDetail, DeliverableRow, ReportResponse, StatusTimelineEntry, WorkItemRef
 from app.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,40 @@ def _extract_relation_target_id(rel: dict) -> int | None:
     target = rel.get("target")
     if isinstance(target, dict) and "id" in target:
         return int(target["id"])
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Delivery days: creation → first Delivered state
+# ---------------------------------------------------------------------------
+
+def _compute_delivery_days(
+    revisions: list[dict],
+    real_to_canonical: dict[str, str],
+) -> float | None:
+    """Calendar days from item creation (rev 1) to first revision in Delivered.
+
+    Returns None if the item never reached a Delivered state.
+    """
+    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    sorted_revs = sorted(
+        (r for r in revisions if _parse_revision_date(r) is not None),
+        key=lambda r: _parse_revision_date(r) or _min_dt,
+    )
+    if not sorted_revs:
+        return None
+
+    created_dt = _parse_revision_date(sorted_revs[0])
+    if created_dt is None:
+        return None
+
+    for rev in sorted_revs:
+        state = _revision_state(rev)
+        if real_to_canonical.get(state) == "Delivered":
+            delivered_dt = _parse_revision_date(rev)
+            if delivered_dt is not None:
+                delta = delivered_dt - created_dt
+                return round(delta.total_seconds() / 86400, 2)
     return None
 
 
@@ -404,15 +438,15 @@ def _compute_boundary_statuses(
 # Hierarchy: walk parent chain for Epic & Feature titles
 # ---------------------------------------------------------------------------
 
-async def _resolve_parent_titles(
+async def _resolve_parents(
     client: AzureDevOpsClient,
     project: str,
     work_item: dict,
     team: TeamConfig,
-) -> tuple[str | None, str | None]:
-    """Walk the parent hierarchy (up to MAX_PARENT_DEPTH) to find Epic and Feature titles."""
-    epic_title: str | None = None
-    feature_title: str | None = None
+) -> tuple[WorkItemRef | None, WorkItemRef | None]:
+    """Walk the parent hierarchy (up to MAX_PARENT_DEPTH) to find Epic and Feature."""
+    epic_ref: WorkItemRef | None = None
+    feature_ref: WorkItemRef | None = None
     current_wi = work_item
 
     for _ in range(MAX_PARENT_DEPTH):
@@ -433,21 +467,24 @@ async def _resolve_parent_titles(
 
         ptype = _work_item_type(parent_wi)
         if ptype not in team.container_types:
-            break  # parent is not a container (Epic/Feature); stop
+            break
 
-        ptitle = _work_item_title(parent_wi) or None
-        if ptype == "Epic" and epic_title is None:
-            epic_title = ptitle
-        elif ptype == "Feature" and feature_title is None:
-            feature_title = ptitle
+        ref = WorkItemRef(
+            id=parent_wi.get("id"),
+            title=_work_item_title(parent_wi) or None,
+            state=_work_item_state(parent_wi) or None,
+        )
+        if ptype == "Epic" and epic_ref is None:
+            epic_ref = ref
+        elif ptype == "Feature" and feature_ref is None:
+            feature_ref = ref
 
-        # Found both — no need to walk further
-        if epic_title and feature_title:
+        if epic_ref and feature_ref:
             break
 
         current_wi = parent_wi
 
-    return epic_title, feature_title
+    return epic_ref, feature_ref
 
 
 # ---------------------------------------------------------------------------
@@ -460,14 +497,14 @@ async def _collect_children(
     work_item: dict,
     all_work_items_by_id: dict[int, dict],
     team: TeamConfig,
-) -> tuple[list[int], list[int]]:
-    """Return (child_bug_ids, child_task_ids).
+) -> tuple[list[WorkItemRef], list[WorkItemRef]]:
+    """Return (child_bugs, child_tasks) as WorkItemRef lists.
 
     Batch-fetches any child IDs not already in the lookup dict (e.g. Bugs
     that weren't in the WIQL deliverable query).
     """
-    bug_ids: list[int] = []
-    task_ids: list[int] = []
+    bugs: list[WorkItemRef] = []
+    tasks: list[WorkItemRef] = []
 
     relations = work_item.get("relations") or []
     child_ids: list[int] = []
@@ -479,9 +516,8 @@ async def _collect_children(
             child_ids.append(cid)
 
     if not child_ids:
-        return bug_ids, task_ids
+        return bugs, tasks
 
-    # Fetch IDs we haven't seen (Bugs won't be in the deliverable batch)
     missing_ids = [cid for cid in child_ids if cid not in all_work_items_by_id]
     if missing_ids:
         fetched = await client.get_work_items_batch(project, missing_ids, expand="None")
@@ -490,18 +526,22 @@ async def _collect_children(
             if wid:
                 all_work_items_by_id[wid] = wi
 
-    # Classify children
     for cid in child_ids:
         child_wi = all_work_items_by_id.get(cid)
         if not child_wi:
             continue
         ctype = _work_item_type(child_wi)
+        ref = WorkItemRef(
+            id=cid,
+            title=_work_item_title(child_wi) or None,
+            state=_work_item_state(child_wi) or None,
+        )
         if ctype in team.bug_types:
-            bug_ids.append(cid)
+            bugs.append(ref)
         elif ctype in team.deliverable_types or "Task" in ctype:
-            task_ids.append(cid)
+            tasks.append(ref)
 
-    return bug_ids, task_ids
+    return bugs, tasks
 
 
 # ---------------------------------------------------------------------------
@@ -582,10 +622,10 @@ async def run_report(
         state = _work_item_state(wi)
         canonical_status = real_to_canonical.get(state) or "Unknown"
 
-        parent_epic, parent_feature = await _resolve_parent_titles(
+        epic_ref, feature_ref = await _resolve_parents(
             client, team.project, wi, team
         )
-        child_bug_ids, child_task_ids = await _collect_children(
+        child_bugs, child_tasks = await _collect_children(
             client, team.project, wi, by_id, team
         )
 
@@ -595,9 +635,28 @@ async def run_report(
         status_timeline = _compute_status_timeline(revs, real_to_canonical)
         status_at_start, status_at_end = _compute_boundary_statuses(revs, start_dt, end_dt)
         bounce_count, bounce_details = _compute_bounces(revs, real_to_canonical)
+        child_bug_ids = [b.id for b in child_bugs]
         has_rework, is_spillover, tags = _compute_tags(
             revs, real_to_canonical, child_bug_ids, status_at_start, bounce_count,
         )
+
+        parent_epic_id = epic_ref.id if epic_ref else None
+        is_technical_debt = (
+            parent_epic_id is not None and parent_epic_id in team.tech_debt_epic_ids
+        )
+        is_post_mortem = (
+            parent_epic_id is not None and parent_epic_id in team.post_mortem_epic_ids
+        )
+
+        delivery_days = _compute_delivery_days(revs, real_to_canonical)
+
+        post_mortem_sla_met: bool | None = None
+        if is_post_mortem and team.post_mortem_sla_weeks is not None:
+            if delivery_days is not None:
+                sla_days = team.post_mortem_sla_weeks * 7
+                post_mortem_sla_met = delivery_days <= sla_days
+            else:
+                post_mortem_sla_met = False
 
         deliverables.append(
             DeliverableRow(
@@ -610,10 +669,10 @@ async def run_report(
                 status_at_start=status_at_start,
                 status_at_end=status_at_end,
                 status_timeline=status_timeline,
-                parent_epic_title=parent_epic,
-                parent_feature_title=parent_feature,
-                child_bug_ids=child_bug_ids,
-                child_task_ids=child_task_ids,
+                parent_epic=epic_ref,
+                parent_feature=feature_ref,
+                child_bugs=child_bugs,
+                child_tasks=child_tasks,
                 developer=developer,
                 qa=qa,
                 release_manager=release_manager,
@@ -621,6 +680,10 @@ async def run_report(
                 is_spillover=is_spillover,
                 bounces=bounce_count,
                 bounce_details=bounce_details,
+                is_technical_debt=is_technical_debt,
+                is_post_mortem=is_post_mortem,
+                post_mortem_sla_met=post_mortem_sla_met,
+                delivery_days=delivery_days,
                 tags=tags,
             )
         )

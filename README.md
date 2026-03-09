@@ -86,10 +86,10 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
         {"date": "2025-01-10T14:30:00Z", "state": "In QA", "canonical_status": "QA Active", "assigned_to": "Bob Jones"},
         {"date": "2025-01-20T09:00:00Z", "state": "Closed", "canonical_status": "Delivered", "assigned_to": "Carol White"}
       ],
-      "parent_epic_title": null,
-      "parent_feature_title": "Payment MVP",
-      "child_bug_ids": [12346],
-      "child_task_ids": [12347, 12348],
+      "parent_epic": {"id": 5000, "title": "Post-Mortem Fixes", "state": "Active"},
+      "parent_feature": {"id": 5010, "title": "Payment MVP", "state": "Active"},
+      "child_bugs": [{"id": 12346, "title": "Null pointer on checkout", "state": "Closed"}],
+      "child_tasks": [{"id": 12347, "title": "DB migration", "state": "Closed"}, {"id": 12348, "title": "API contract", "state": "Closed"}],
       "developer": "Alice Smith",
       "qa": "Bob Jones",
       "release_manager": "Carol White",
@@ -97,6 +97,10 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "is_spillover": false,
       "bounces": 0,
       "bounce_details": [],
+      "is_technical_debt": false,
+      "is_post_mortem": true,
+      "post_mortem_sla_met": true,
+      "delivery_days": 5.38,
       "tags": ["Code Defect"]
     },
     {
@@ -112,10 +116,10 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
         {"date": "2024-12-20T08:00:00Z", "state": "In QA", "canonical_status": "QA Active", "assigned_to": "Bob Jones"},
         {"date": "2025-01-05T08:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Alice Smith"}
       ],
-      "parent_epic_title": null,
-      "parent_feature_title": null,
-      "child_bug_ids": [],
-      "child_task_ids": [],
+      "parent_epic": null,
+      "parent_feature": null,
+      "child_bugs": [],
+      "child_tasks": [],
       "developer": "Alice Smith",
       "qa": "Bob Jones",
       "release_manager": null,
@@ -125,6 +129,10 @@ GET http://localhost:8000/report?team_id=game-services&start_date=2025-01-01&end
       "bounce_details": [
         {"from_revision": 7, "to_revision": 8, "from_state": "In QA", "to_state": "Active", "date": "2025-01-05T08:00:00Z"}
       ],
+      "is_technical_debt": false,
+      "is_post_mortem": false,
+      "post_mortem_sla_met": null,
+      "delivery_days": null,
       "tags": ["Scope / Requirements", "Spillover"]
     }
   ]
@@ -189,15 +197,19 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
             {"date": "2024-12-15T10:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Alice Smith"},
             {"date": "2025-01-20T09:00:00Z", "state": "Closed", "canonical_status": "Delivered", "assigned_to": "Carol White"}
           ],
-          "parent_epic_title": null,
-          "parent_feature_title": "Payment MVP",
+          "parent_epic": null,
+          "parent_feature": {"id": 5010, "title": "Payment MVP", "state": "Active"},
           "has_rework": true,
           "is_spillover": false,
           "bounces": 0,
           "bounce_details": [],
+          "is_technical_debt": false,
+          "is_post_mortem": false,
+          "post_mortem_sla_met": null,
+          "delivery_days": 36.96,
           "tags": ["Code Defect"],
-          "child_bug_ids": [12346],
-          "child_task_ids": [12347, 12348],
+          "child_bugs": [{"id": 12346, "title": "Null pointer on checkout", "state": "Closed"}],
+          "child_tasks": [{"id": 12347, "title": "DB migration", "state": "Closed"}, {"id": 12348, "title": "API contract", "state": "Closed"}],
           "developer": "Alice Smith",
           "qa": "Bob Jones",
           "release_manager": "Carol White"
@@ -220,15 +232,19 @@ GET http://localhost:8000/report/multi?team_ids=game-services,payment-services&s
             {"date": "2024-12-20T11:00:00Z", "state": "Active", "canonical_status": "Development Active", "assigned_to": "Dave Brown"},
             {"date": "2025-01-15T16:00:00Z", "state": "In QA", "canonical_status": "QA Active", "assigned_to": "Eve Green"}
           ],
-          "parent_epic_title": null,
-          "parent_feature_title": "Refunds",
+          "parent_epic": {"id": 9001, "title": "Tech Debt Q1", "state": "Active"},
+          "parent_feature": {"id": 9010, "title": "Refunds", "state": "Active"},
           "has_rework": false,
           "is_spillover": true,
           "bounces": 0,
           "bounce_details": [],
+          "is_technical_debt": true,
+          "is_post_mortem": false,
+          "post_mortem_sla_met": null,
+          "delivery_days": null,
           "tags": ["Spillover"],
-          "child_bug_ids": [],
-          "child_task_ids": [12401],
+          "child_bugs": [],
+          "child_tasks": [{"id": 12401, "title": "Write integration tests", "state": "Active"}],
           "developer": "Dave Brown",
           "qa": "Eve Green",
           "release_manager": null
@@ -298,7 +314,7 @@ Each deliverable includes tags, boolean flags, and bounce tracking:
 
 | Tag | Condition |
 |-----|-----------|
-| `Code Defect` | The work item has one or more linked child bugs (`child_bug_ids` non-empty). |
+| `Code Defect` | The work item has one or more linked child bugs (`child_bugs` non-empty). |
 | `Scope / Requirements` | The item bounced back at least once (`bounces > 0`). |
 | `Spillover` | The item was in **Development Active** or **QA Active** at the start of the queried period (`status_at_start`). |
 
@@ -306,9 +322,34 @@ A deliverable can have multiple tags simultaneously (e.g. both `Code Defect` and
 
 ---
 
+## Technical Debt & Post-Mortem
+
+Each deliverable is checked against per-team epic ID lists from `teams.yaml`:
+
+| Field | Description |
+|-------|-------------|
+| `parent_epic` | Parent Epic as `{id, title, state}` object (null if none) |
+| `parent_feature` | Parent Feature as `{id, title, state}` object (null if none) |
+| `child_bugs` | List of child bugs as `{id, title, state}` objects |
+| `child_tasks` | List of child tasks as `{id, title, state}` objects |
+| `is_technical_debt` | `true` if `parent_epic.id` is in the team's `tech_debt_epic_ids` list |
+| `is_post_mortem` | `true` if `parent_epic.id` is in the team's `post_mortem_epic_ids` list |
+| `post_mortem_sla_met` | `true` if `delivery_days <= post_mortem_sla_weeks * 7`. `false` if not yet delivered. `null` if not a post-mortem item |
+| `delivery_days` | Calendar days from work item creation (first revision) to first Delivered state. `null` if not yet delivered |
+
+**YAML config per team:**
+
+```yaml
+tech_debt_epic_ids: [1234, 5678]
+post_mortem_epic_ids: [9001]
+post_mortem_sla_weeks: 2
+```
+
+---
+
 ## Config
 
-Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, and state mappings per team. The five default teams are: **game-services**, **domain-tooling-services**, **payment-services**, **player-engagement-services**, **rules-engine**.
+Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, state mappings, tech_debt_epic_ids, post_mortem_epic_ids, and post_mortem_sla_weeks per team. The five default teams are: **game-services**, **domain-tooling-services**, **payment-services**, **player-engagement-services**, **rules-engine**.
 
 **Canonical statuses** (each maps from real Azure DevOps states; configurable per team in `states`):
 

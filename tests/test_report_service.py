@@ -10,12 +10,13 @@ from app.services.report_service import (
     _collect_children,
     _compute_bounces,
     _compute_boundary_statuses,
+    _compute_delivery_days,
     _compute_tags,
     _compute_role_assignments,
     _compute_status_timeline,
     _extract_relation_target_id,
     _parse_revision_date,
-    _resolve_parent_titles,
+    _resolve_parents,
     _revision_assigned_to,
     _revision_state,
     _work_item_description,
@@ -562,3 +563,54 @@ def test_tags_combined_code_defect_and_spillover():
     assert is_spillover is True
     assert "Code Defect" in tags
     assert "Spillover" in tags
+
+
+# ---------------------------------------------------------------------------
+# Delivery days
+# ---------------------------------------------------------------------------
+
+
+def test_delivery_days_basic():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
+        {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
+        {"fields": {"System.ChangedDate": "2025-01-15T00:00:00Z", "System.State": "Closed"}},
+    ]
+    days = _compute_delivery_days(revs, _TAG_CANONICAL)
+    assert days == 14.0
+
+
+def test_delivery_days_never_delivered():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
+        {"fields": {"System.ChangedDate": "2025-01-05T00:00:00Z", "System.State": "Active"}},
+    ]
+    days = _compute_delivery_days(revs, _TAG_CANONICAL)
+    assert days is None
+
+
+def test_delivery_days_empty():
+    assert _compute_delivery_days([], _TAG_CANONICAL) is None
+
+
+def test_delivery_days_delivered_same_day():
+    revs = [
+        {"fields": {"System.ChangedDate": "2025-01-10T10:00:00Z", "System.State": "New"}},
+        {"fields": {"System.ChangedDate": "2025-01-10T18:00:00Z", "System.State": "Closed"}},
+    ]
+    days = _compute_delivery_days(revs, _TAG_CANONICAL)
+    assert days is not None
+    assert days < 1.0
+
+
+# ---------------------------------------------------------------------------
+# Config: tech debt & post mortem fields
+# ---------------------------------------------------------------------------
+
+
+def test_config_has_tech_debt_and_post_mortem_fields():
+    teams = load_teams_config()
+    for tid, tc in teams.items():
+        assert isinstance(tc.tech_debt_epic_ids, list), f"{tid} missing tech_debt_epic_ids"
+        assert isinstance(tc.post_mortem_epic_ids, list), f"{tid} missing post_mortem_epic_ids"
+        assert tc.post_mortem_sla_weeks is not None, f"{tid} missing post_mortem_sla_weeks"

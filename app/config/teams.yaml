@@ -14,6 +14,9 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
+    tech_debt_epic_ids: []
+    post_mortem_epic_ids: []
+    post_mortem_sla_weeks: 2
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -50,6 +53,9 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
+    tech_debt_epic_ids: []
+    post_mortem_epic_ids: []
+    post_mortem_sla_weeks: 2
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -95,6 +101,9 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
+    tech_debt_epic_ids: []
+    post_mortem_epic_ids: []
+    post_mortem_sla_weeks: 2
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -132,6 +141,9 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
+    tech_debt_epic_ids: []
+    post_mortem_epic_ids: []
+    post_mortem_sla_weeks: 2
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -167,6 +179,9 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
+    tech_debt_epic_ids: []
+    post_mortem_epic_ids: []
+    post_mortem_sla_weeks: 2
     states:
       - canonical_status: "Development Active"
         real_states:

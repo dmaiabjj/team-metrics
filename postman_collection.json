@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Azure DevOps Performance Report API",
-    "description": "Performance report endpoints for team deliverables and date range. Each deliverable includes tags (Code Defect, Scope / Requirements, Spillover), has_rework, is_spillover, bounces (count), and bounce_details (revision-level bounce history).",
+    "description": "Performance report endpoints for team deliverables and date range. Each deliverable includes tags, has_rework, is_spillover, bounces, bounce_details, is_technical_debt, is_post_mortem, post_mortem_sla_met, and delivery_days.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

@@ -16,6 +16,12 @@ class StatusTimelineEntry(BaseModel):
     assigned_to: str | None = None
 
 
+class WorkItemRef(BaseModel):
+    id: int
+    title: str | None = None
+    state: str | None = None
+
+
 class BounceDetail(BaseModel):
     from_revision: int
     to_revision: int
@@ -34,10 +40,10 @@ class DeliverableRow(BaseModel):
     status_at_start: str | None = None
     status_at_end: str | None = None
     status_timeline: list[StatusTimelineEntry] = Field(default_factory=list)
-    parent_epic_title: str | None = None
-    parent_feature_title: str | None = None
-    child_bug_ids: list[int] = Field(default_factory=list)
-    child_task_ids: list[int] = Field(default_factory=list)
+    parent_epic: WorkItemRef | None = None
+    parent_feature: WorkItemRef | None = None
+    child_bugs: list[WorkItemRef] = Field(default_factory=list)
+    child_tasks: list[WorkItemRef] = Field(default_factory=list)
     developer: str | None = None
     qa: str | None = None
     release_manager: str | None = None
@@ -56,6 +62,22 @@ class DeliverableRow(BaseModel):
     bounce_details: list[BounceDetail] = Field(
         default_factory=list,
         description="Details of each bounce: which revisions, states, and when.",
+    )
+    is_technical_debt: bool = Field(
+        default=False,
+        description="True if the work item is under a tech-debt epic (configured per team).",
+    )
+    is_post_mortem: bool = Field(
+        default=False,
+        description="True if the work item is under a post-mortem epic (configured per team).",
+    )
+    post_mortem_sla_met: bool | None = Field(
+        default=None,
+        description="True if post-mortem item was delivered within the SLA. None if not a post-mortem item.",
+    )
+    delivery_days: float | None = Field(
+        default=None,
+        description="Calendar days from creation to Delivered status. None if not yet delivered.",
     )
     tags: list[str] = Field(
         default_factory=list,
