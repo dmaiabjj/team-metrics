@@ -4,18 +4,26 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
+from collections import defaultdict
+
 from app.config.kpi_loader import (
     DeliveryPredictabilityConfig,
     FlowHygieneConfig,
     ReworkRateConfig,
+    WIPDisciplineConfig,
 )
+from app.config.team_loader import TeamConfig
 from app.schemas.kpi import (
     AverageKPI,
     DeliveryPredictabilityKPI,
     FlowHygieneKPI,
+    PersonStatusBreakdown,
+    PersonWIPMetric,
     RAGStatus,
     ReworkRateKPI,
+    RoleWIPSummary,
     StateQueueMetric,
+    WIPDisciplineKPI,
 )
 from app.schemas.report import DeliverableRow
 
@@ -258,13 +266,173 @@ def _was_in_queue_states(d: DeliverableRow, queue_states: frozenset[str]) -> boo
 
 
 # ---------------------------------------------------------------------------
+# WIP Discipline
+# ---------------------------------------------------------------------------
+
+def _assignee_and_state_on_day(
+    d: DeliverableRow,
+    target_day: date,
+) -> tuple[str | None, str | None, str | None]:
+    """Return (state, canonical_status, assigned_to) at end-of-day *target_day*."""
+    state: str | None = None
+    canonical: str | None = None
+    assignee: str | None = None
+    for entry in d.status_timeline:
+        entry_date = entry.date.date() if isinstance(entry.date, datetime) else entry.date
+        if entry_date <= target_day:
+            state = entry.state
+            canonical = entry.canonical_status
+            assignee = entry.assigned_to
+        else:
+            break
+    return state, canonical, assignee
+
+
+def _build_role_summary(
+    person_daily_totals: dict[str, list[int]],
+    person_daily_per_state: dict[str, dict[str, list[int]]],
+    wip_limit: int,
+    compliance_threshold: float,
+    total_days: int,
+    role: str,
+    canonical_status: str,
+) -> RoleWIPSummary:
+    """Aggregate daily per-person WIP counts into a RoleWIPSummary."""
+    persons: list[PersonWIPMetric] = []
+    for person, daily_totals in sorted(person_daily_totals.items()):
+        avg_wip = sum(daily_totals) / len(daily_totals) if daily_totals else 0.0
+        peak_wip = max(daily_totals) if daily_totals else 0
+        days_compliant = sum(1 for c in daily_totals if c <= wip_limit)
+        days_over = total_days - days_compliant
+        compliance_pct = days_compliant / total_days if total_days > 0 else 1.0
+
+        breakdown: list[PersonStatusBreakdown] = []
+        for st, st_daily in sorted(person_daily_per_state.get(person, {}).items()):
+            st_avg = sum(st_daily) / len(st_daily) if st_daily else 0.0
+            st_peak = max(st_daily) if st_daily else 0
+            if st_avg > 0 or st_peak > 0:
+                breakdown.append(PersonStatusBreakdown(
+                    state=st,
+                    avg_items=round(st_avg, 2),
+                    peak_items=st_peak,
+                ))
+
+        persons.append(PersonWIPMetric(
+            person=person,
+            avg_wip=round(avg_wip, 2),
+            peak_wip=peak_wip,
+            days_compliant=days_compliant,
+            days_over_limit=days_over,
+            total_days=total_days,
+            compliance_pct=round(compliance_pct, 4),
+            is_compliant=compliance_pct >= compliance_threshold,
+            status_breakdown=breakdown,
+        ))
+
+    total_persons = len(persons)
+    compliant_count = sum(1 for p in persons if p.is_compliant)
+    total_compliant_days = sum(p.days_compliant for p in persons)
+    total_person_days = total_persons * total_days
+    compliance_rate = total_compliant_days / total_person_days if total_person_days > 0 else 1.0
+    return RoleWIPSummary(
+        role=role,
+        canonical_status=canonical_status,
+        wip_limit=wip_limit,
+        total_persons=total_persons,
+        persons_compliant=compliant_count,
+        persons_over_limit=total_persons - compliant_count,
+        compliance_rate=round(compliance_rate, 4),
+        persons=persons,
+    )
+
+
+def compute_wip_discipline(
+    deliverables: list[DeliverableRow],
+    config: WIPDisciplineConfig,
+    team_config: TeamConfig,
+    start: date,
+    end: date,
+) -> WIPDisciplineKPI:
+    total_days = (end - start).days + 1
+    if total_days <= 0:
+        total_days = 1
+    days = [start + timedelta(days=i) for i in range(total_days)]
+
+    real_to_canonical = team_config.real_state_to_canonical()
+
+    dev_daily_totals: dict[str, list[int]] = defaultdict(lambda: [0] * total_days)
+    dev_daily_per_state: dict[str, dict[str, list[int]]] = defaultdict(
+        lambda: defaultdict(lambda: [0] * total_days)
+    )
+    qa_daily_totals: dict[str, list[int]] = defaultdict(lambda: [0] * total_days)
+    qa_daily_per_state: dict[str, dict[str, list[int]]] = defaultdict(
+        lambda: defaultdict(lambda: [0] * total_days)
+    )
+
+    for day_idx, day in enumerate(days):
+        for d in deliverables:
+            state, canonical_from_timeline, assignee = _assignee_and_state_on_day(d, day)
+            if state is None or assignee is None:
+                continue
+            canonical = canonical_from_timeline or real_to_canonical.get(state)
+            if canonical == "Development Active":
+                dev_daily_totals[assignee][day_idx] += 1
+                dev_daily_per_state[assignee][state][day_idx] += 1
+            elif canonical == "QA Active":
+                qa_daily_totals[assignee][day_idx] += 1
+                qa_daily_per_state[assignee][state][day_idx] += 1
+
+    dev_summary = _build_role_summary(
+        dev_daily_totals, dev_daily_per_state,
+        config.dev_wip_limit, config.compliance_threshold,
+        total_days, "developer", "Development Active",
+    )
+    qa_summary = _build_role_summary(
+        qa_daily_totals, qa_daily_per_state,
+        config.qa_wip_limit, config.compliance_threshold,
+        total_days, "qa", "QA Active",
+    )
+
+    dev_compliant = sum(p.days_compliant for p in dev_summary.persons)
+    qa_compliant = sum(p.days_compliant for p in qa_summary.persons)
+    dev_total = dev_summary.total_persons * total_days
+    qa_total = qa_summary.total_persons * total_days
+    total_hours = dev_total + qa_total
+    value = (dev_compliant + qa_compliant) / total_hours if total_hours > 0 else 1.0
+
+    if value >= config.rag.green_min:
+        rag = RAGStatus.GREEN
+    elif value >= config.rag.amber_min:
+        rag = RAGStatus.AMBER
+    else:
+        rag = RAGStatus.RED
+
+    green_pct = f"{config.rag.green_min * 100:.0f}%"
+    amber_pct = f"{config.rag.amber_min * 100:.0f}%"
+
+    return WIPDisciplineKPI(
+        value=round(value, 4),
+        display=f"{value * 100:.1f}%",
+        rag=rag,
+        total_days=total_days,
+        developers=dev_summary,
+        qas=qa_summary,
+        thresholds={
+            "green": f">= {green_pct}",
+            "amber": f"{amber_pct}-{green_pct}",
+            "red": f"< {amber_pct}",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cross-team average
 # ---------------------------------------------------------------------------
 
 def compute_kpi_average(
     kpi_name: str,
-    team_kpis: list[ReworkRateKPI] | list[DeliveryPredictabilityKPI] | list[FlowHygieneKPI],
-    config: ReworkRateConfig | DeliveryPredictabilityConfig | FlowHygieneConfig,
+    team_kpis: list,
+    config: ReworkRateConfig | DeliveryPredictabilityConfig | FlowHygieneConfig | WIPDisciplineConfig,
 ) -> AverageKPI:
     if not team_kpis:
         return AverageKPI(
@@ -276,7 +444,7 @@ def compute_kpi_average(
         )
     avg = sum(k.value for k in team_kpis) / len(team_kpis)
 
-    if isinstance(config, DeliveryPredictabilityConfig):
+    if isinstance(config, (DeliveryPredictabilityConfig, WIPDisciplineConfig)):
         rag = _rag_higher_is_better(avg, config)
     elif isinstance(config, FlowHygieneConfig):
         rag = _rag_flow_hygiene(avg, config)
@@ -309,7 +477,11 @@ _FH_METRICS = frozenset({
     "items_in_queue",
 })
 
-VALID_DRILLDOWN_METRICS = _REWORK_METRICS | _DP_METRICS | _FH_METRICS
+_WD_METRICS = frozenset({
+    "developer_assignments", "qa_assignments",
+})
+
+VALID_DRILLDOWN_METRICS = _REWORK_METRICS | _DP_METRICS | _FH_METRICS | _WD_METRICS
 
 
 def filter_deliverables_by_metric(
@@ -320,6 +492,7 @@ def filter_deliverables_by_metric(
     fh_config: FlowHygieneConfig | None = None,
     start: date | None = None,
     end: date | None = None,
+    person: str | None = None,
 ) -> list[DeliverableRow]:
     if metric not in VALID_DRILLDOWN_METRICS:
         raise ValueError(
@@ -365,5 +538,19 @@ def filter_deliverables_by_metric(
         queue_states = frozenset(fh_config.queue_states)
         if metric == "items_in_queue":
             return [d for d in deliverables if _was_in_queue_states(d, queue_states)]
+
+    if metric in _WD_METRICS:
+        if metric == "developer_assignments":
+            result = [d for d in deliverables if d.developer is not None]
+            if person:
+                person_lower = person.lower()
+                result = [d for d in result if (d.developer or "").lower() == person_lower]
+            return result
+        if metric == "qa_assignments":
+            result = [d for d in deliverables if d.qa is not None]
+            if person:
+                person_lower = person.lower()
+                result = [d for d in result if (d.qa or "").lower() == person_lower]
+            return result
 
     return []

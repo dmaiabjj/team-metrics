@@ -13,7 +13,9 @@ from app.config.kpi_loader import (
     RAGThresholds,
     RAGThresholdsHigherIsBetter,
     ReworkRateConfig,
+    WIPDisciplineConfig,
 )
+from app.config.team_loader import StateMapping, TeamConfig
 from app.schemas.kpi import DeliveryPredictabilityKPI, FlowHygieneKPI, RAGStatus, ReworkRateKPI
 from app.schemas.report import DeliverableRow, StatusTimelineEntry, WorkItemRef
 from app.services.kpi_service import (
@@ -21,6 +23,7 @@ from app.services.kpi_service import (
     compute_flow_hygiene,
     compute_kpi_average,
     compute_rework_rate,
+    compute_wip_discipline,
     filter_deliverables_by_metric,
 )
 
@@ -52,6 +55,8 @@ def _make_deliverable(
     start_date: datetime | None = None,
     status_at_end: str | None = None,
     canonical_status: str | None = None,
+    developer: str | None = None,
+    qa: str | None = None,
 ) -> DeliverableRow:
     timeline = []
     if timeline_canons:
@@ -74,6 +79,8 @@ def _make_deliverable(
         is_spillover=is_spillover,
         start_date=start_date,
         status_at_end=status_at_end,
+        developer=developer,
+        qa=qa,
     )
 
 
@@ -606,3 +613,224 @@ class TestComputeFlowHygiene:
         assert cr_state.queue_load == 1.5
         assert result.value == 1.5
         assert result.rag == RAGStatus.RED
+
+
+# ---------------------------------------------------------------------------
+# WIP Discipline defaults
+# ---------------------------------------------------------------------------
+
+_DEFAULT_WD_CONFIG = WIPDisciplineConfig(
+    enabled=True,
+    description="test",
+    formula="test",
+    dev_wip_limit=3,
+    qa_wip_limit=2,
+    compliance_threshold=0.80,
+    rag=RAGThresholdsHigherIsBetter(green_min=0.80, amber_min=0.60),
+)
+
+_DEFAULT_TEAM_CONFIG = TeamConfig(
+    project="test-project",
+    states=[
+        StateMapping(canonical_status="Development Active", real_states=["Active", "Code Review", "Blocked"]),
+        StateMapping(canonical_status="QA Active", real_states=["Ready for QA", "In QA"]),
+        StateMapping(canonical_status="Delivered", real_states=["Closed"]),
+        StateMapping(canonical_status="Backlog", real_states=["New"]),
+    ],
+)
+
+
+def _make_wd_deliverable(
+    wid: int,
+    state_transitions: list[tuple[str, str, str, str | None]],
+    developer: str | None = None,
+    qa: str | None = None,
+) -> DeliverableRow:
+    """Create a deliverable for WIP discipline tests.
+
+    state_transitions: list of (date_str, state, canonical_status, assigned_to).
+    """
+    timeline = [
+        StatusTimelineEntry(
+            date=datetime.fromisoformat(dt + "T00:00:00+00:00"),
+            state=state,
+            canonical_status=canonical,
+            assigned_to=assignee,
+        )
+        for dt, state, canonical, assignee in state_transitions
+    ]
+    last_state = state_transitions[-1][1] if state_transitions else "New"
+    return DeliverableRow(
+        id=wid,
+        work_item_type="User Story",
+        title=f"Item {wid}",
+        state=last_state,
+        status_timeline=timeline,
+        developer=developer,
+        qa=qa,
+    )
+
+
+class TestComputeWIPDiscipline:
+    def test_empty_deliverables(self):
+        result = compute_wip_discipline(
+            [], _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
+            date(2025, 1, 1), date(2025, 1, 3),
+        )
+        assert result.name == "wip_discipline"
+        assert result.value == 1.0
+        assert result.rag == RAGStatus.GREEN
+        assert result.developers.total_persons == 0
+        assert result.qas.total_persons == 0
+
+    def test_all_devs_compliant(self):
+        """2 devs each with <= 3 items for all 3 days -> 100% compliant."""
+        items = [
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Alice")]),
+            _make_wd_deliverable(2, [("2024-12-30", "Active", "Development Active", "Alice")]),
+            _make_wd_deliverable(3, [("2024-12-30", "Active", "Development Active", "Bob")]),
+        ]
+        result = compute_wip_discipline(
+            items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
+            date(2025, 1, 1), date(2025, 1, 3),
+        )
+        assert result.developers.total_persons == 2
+        assert result.developers.persons_compliant == 2
+        assert result.developers.compliance_rate == 1.0
+        assert result.value == 1.0
+        assert result.rag == RAGStatus.GREEN
+
+    def test_dev_over_limit(self):
+        """Alice has 4 items (limit=3) for all 3 days -> not compliant.
+        Bob has 1 -> compliant. Dev compliance = 50%."""
+        items = [
+            _make_wd_deliverable(i, [("2024-12-30", "Active", "Development Active", "Alice")])
+            for i in range(1, 5)
+        ] + [
+            _make_wd_deliverable(5, [("2024-12-30", "Active", "Development Active", "Bob")]),
+        ]
+        result = compute_wip_discipline(
+            items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
+            date(2025, 1, 1), date(2025, 1, 3),
+        )
+        assert result.developers.total_persons == 2
+        assert result.developers.persons_compliant == 1
+        assert result.developers.persons_over_limit == 1
+        assert result.developers.compliance_rate == 0.5
+        alice = next(p for p in result.developers.persons if p.person == "Alice")
+        assert alice.is_compliant is False
+        assert alice.peak_wip == 4
+
+    def test_qa_worse_than_dev(self):
+        """Devs all compliant but QA over limit -> value = compliant_hours / total_hours.
+        Dev1: 1 compliant day. QA1: 0 compliant days. Total = (1+0)/(1+1) = 0.5."""
+        items = [
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Dev1")]),
+            _make_wd_deliverable(2, [("2024-12-30", "In QA", "QA Active", "QA1")]),
+            _make_wd_deliverable(3, [("2024-12-30", "In QA", "QA Active", "QA1")]),
+            _make_wd_deliverable(4, [("2024-12-30", "In QA", "QA Active", "QA1")]),
+        ]
+        result = compute_wip_discipline(
+            items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
+            date(2025, 1, 1), date(2025, 1, 1),
+        )
+        assert result.developers.compliance_rate == 1.0
+        assert result.qas.compliance_rate == 0.0
+        assert result.value == 0.5
+        assert result.rag == RAGStatus.RED
+
+    def test_status_breakdown_by_real_state(self):
+        """Alice has items in Active and Code Review -> breakdown shows both."""
+        items = [
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Alice")]),
+            _make_wd_deliverable(2, [("2024-12-30", "Code Review", "Development Active", "Alice")]),
+        ]
+        result = compute_wip_discipline(
+            items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
+            date(2025, 1, 1), date(2025, 1, 1),
+        )
+        alice = result.developers.persons[0]
+        states = {b.state: b.avg_items for b in alice.status_breakdown}
+        assert "Active" in states
+        assert "Code Review" in states
+        assert states["Active"] == 1.0
+        assert states["Code Review"] == 1.0
+        assert alice.avg_wip == 2.0
+
+    def test_mid_period_transition(self):
+        """Item moves from Dev Active to QA Active mid-period."""
+        items = [
+            _make_wd_deliverable(1, [
+                ("2025-01-01", "Active", "Development Active", "Alice"),
+                ("2025-01-02", "In QA", "QA Active", "Bob"),
+            ]),
+        ]
+        result = compute_wip_discipline(
+            items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
+            date(2025, 1, 1), date(2025, 1, 3),
+        )
+        alice = next(p for p in result.developers.persons if p.person == "Alice")
+        assert alice.avg_wip == pytest.approx(1 / 3, abs=0.01)
+        bob = next(p for p in result.qas.persons if p.person == "Bob")
+        assert bob.avg_wip == pytest.approx(2 / 3, abs=0.01)
+
+    def test_compliance_threshold_boundary(self):
+        """Dev over limit exactly 1 out of 5 days = 80% compliant -> passes."""
+        items = [
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Alice")]),
+            _make_wd_deliverable(2, [("2024-12-30", "Active", "Development Active", "Alice")]),
+            _make_wd_deliverable(3, [("2024-12-30", "Active", "Development Active", "Alice")]),
+            _make_wd_deliverable(4, [
+                ("2025-01-01", "Active", "Development Active", "Alice"),
+                ("2025-01-02", "Closed", "Delivered", "Alice"),
+            ]),
+        ]
+        result = compute_wip_discipline(
+            items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
+            date(2025, 1, 1), date(2025, 1, 5),
+        )
+        alice = next(p for p in result.developers.persons if p.person == "Alice")
+        assert alice.days_over_limit == 1
+        assert alice.days_compliant == 4
+        assert alice.compliance_pct == 0.8
+        assert alice.is_compliant is True
+
+
+class TestFilterWDMetrics:
+    def test_developer_assignments(self):
+        items = [
+            _make_deliverable(1, developer="Alice"),
+            _make_deliverable(2, developer="Bob"),
+            _make_deliverable(3, developer=None),
+        ]
+        result = filter_deliverables_by_metric(items, "developer_assignments")
+        assert len(result) == 2
+        assert {d.id for d in result} == {1, 2}
+
+    def test_developer_assignments_with_person_filter(self):
+        items = [
+            _make_deliverable(1, developer="Alice"),
+            _make_deliverable(2, developer="Bob"),
+            _make_deliverable(3, developer="Alice"),
+        ]
+        result = filter_deliverables_by_metric(items, "developer_assignments", person="Alice")
+        assert len(result) == 2
+        assert all(d.developer == "Alice" for d in result)
+
+    def test_qa_assignments(self):
+        items = [
+            _make_deliverable(1, qa="Charlie"),
+            _make_deliverable(2, qa=None),
+        ]
+        result = filter_deliverables_by_metric(items, "qa_assignments")
+        assert len(result) == 1
+        assert result[0].id == 1
+
+    def test_qa_assignments_with_person_filter(self):
+        items = [
+            _make_deliverable(1, qa="Charlie"),
+            _make_deliverable(2, qa="Dave"),
+        ]
+        result = filter_deliverables_by_metric(items, "qa_assignments", person="Charlie")
+        assert len(result) == 1
+        assert result[0].qa == "Charlie"

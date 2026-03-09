@@ -79,9 +79,56 @@ class FlowHygieneKPI(BaseModel):
     )
 
 
+class PersonStatusBreakdown(BaseModel):
+    state: str
+    avg_items: float = Field(description="Average daily items in this real state")
+    peak_items: int = Field(description="Maximum daily items observed")
+
+
+class PersonWIPMetric(BaseModel):
+    person: str
+    avg_wip: float = Field(description="Average daily WIP across the period")
+    peak_wip: int = Field(description="Maximum daily WIP observed")
+    days_compliant: int
+    days_over_limit: int
+    total_days: int
+    compliance_pct: float = Field(description="days_compliant / total_days")
+    is_compliant: bool = Field(description="True if compliance_pct >= threshold")
+    status_breakdown: list[PersonStatusBreakdown] = Field(default_factory=list)
+
+
+class RoleWIPSummary(BaseModel):
+    role: str = Field(description="developer or qa")
+    canonical_status: str
+    wip_limit: int
+    total_persons: int
+    persons_compliant: int
+    persons_over_limit: int
+    compliance_rate: float = Field(description="sum(days_compliant) / (total_persons * total_days)")
+    persons: list[PersonWIPMetric] = Field(default_factory=list)
+
+
+class WIPDisciplineKPI(BaseModel):
+    name: str = "wip_discipline"
+    value: float = Field(description="compliant_hours / total_hours across all persons and roles")
+    display: str = Field(description="Human-readable percentage (e.g. '75.0%')")
+    rag: RAGStatus
+    total_days: int
+    developers: RoleWIPSummary
+    qas: RoleWIPSummary
+    thresholds: dict[str, str] = Field(
+        default_factory=lambda: {
+            "green": ">= 80%",
+            "amber": "60-80%",
+            "red": "< 60%",
+        }
+    )
+
+
 _KPI_TAG_MAP = {
     "delivery_predictability": "delivery_predictability",
     "flow_hygiene": "flow_hygiene",
+    "wip_discipline": "wip_discipline",
 }
 
 
@@ -95,6 +142,7 @@ KPIResult = Annotated[
         Annotated[ReworkRateKPI, Tag("rework_rate")],
         Annotated[DeliveryPredictabilityKPI, Tag("delivery_predictability")],
         Annotated[FlowHygieneKPI, Tag("flow_hygiene")],
+        Annotated[WIPDisciplineKPI, Tag("wip_discipline")],
     ],
     Discriminator(_kpi_discriminator),
 ]

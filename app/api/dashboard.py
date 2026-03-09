@@ -31,6 +31,7 @@ from app.services.kpi_service import (
     compute_flow_hygiene,
     compute_kpi_average,
     compute_rework_rate,
+    compute_wip_discipline,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ async def get_dashboard(
     all_rework_kpis = []
     all_dp_kpis = []
     all_fh_kpis = []
+    all_wd_kpis = []
 
     for tid, result in zip(team_ids, results):
         if isinstance(result, Exception):
@@ -93,6 +95,15 @@ async def get_dashboard(
                 )
                 kpis.append(fh)
                 all_fh_kpis.append(fh)
+        if kpi_config.wip_discipline.enabled:
+            tc = tc if tc is not None else get_team_config(tid)
+            if tc is not None:
+                wd = compute_wip_discipline(
+                    report.deliverables, kpi_config.wip_discipline,
+                    tc, start_date, end_date,
+                )
+                kpis.append(wd)
+                all_wd_kpis.append(wd)
         team_entries.append(TeamKPIEntry(team_id=report.team_id, kpis=kpis))
 
     averages: list[AverageKPI] = []
@@ -111,6 +122,12 @@ async def get_dashboard(
         averages.append(
             compute_kpi_average(
                 "flow_hygiene", all_fh_kpis, kpi_config.flow_hygiene,
+            )
+        )
+    if kpi_config.wip_discipline.enabled and all_wd_kpis:
+        averages.append(
+            compute_kpi_average(
+                "wip_discipline", all_wd_kpis, kpi_config.wip_discipline,
             )
         )
 

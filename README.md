@@ -189,7 +189,7 @@ GET /teams/{team_id}/kpis/{kpi_name}?start_date=2025-01-01&end_date=2025-01-31
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `team_id` | path | Yes | Team slug |
-| `kpi_name` | path | Yes | `rework-rate`, `delivery-predictability`, or `flow-hygiene` |
+| `kpi_name` | path | Yes | `rework-rate`, `delivery-predictability`, `flow-hygiene`, or `wip-discipline` |
 | `start_date` | date | Yes | Start of period (ISO) |
 | `end_date` | date | Yes | End of period (ISO) |
 
@@ -235,10 +235,11 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | Parameter    | Type | Required | Description                                |
 | ------------ | ---- | -------- | ------------------------------------------ |
 | `team_id`    | path | Yes      | Team slug                                  |
-| `kpi_name`   | path | Yes      | `rework-rate`, `delivery-predictability`, or `flow-hygiene` |
+| `kpi_name`   | path | Yes      | `rework-rate`, `delivery-predictability`, `flow-hygiene`, or `wip-discipline` |
 | `metric`     | path | Yes      | Metric to drill into (see table below)     |
 | `start_date` | date | Yes      | Start of period (ISO)                      |
 | `end_date`   | date | Yes      | End of period (ISO)                        |
+| `person`     | str  | No       | Filter to a specific person (WIP discipline only) |
 | `skip`       | int  | No       | Pagination offset (default 0)              |
 | `limit`      | int  | No       | Max items (default 100, max 500)           |
 
@@ -251,6 +252,7 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | `rework-rate`             | `items_reached_qa`, `items_with_rework`, `items_bounced_back`, `items_with_bugs`  |
 | `delivery-predictability` | `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover` |
 | `flow-hygiene`            | `items_in_queue`                                                                  |
+| `wip-discipline`          | `developer_assignments`, `qa_assignments`                                         |
 
 
 **Response** `200 OK`
@@ -613,6 +615,36 @@ The response includes a per-state breakdown with `wip_limit_source` indicating w
 | Green | <= 1.0    |
 | Amber | 1.0-1.2   |
 | Red   | > 1.2     |
+
+
+All thresholds are configurable in `app/config/kpis.yaml`.
+
+### WIP Discipline
+
+Measures whether individual developers and QAs stay within their personal WIP limits. Uses daily snapshots over the period and tracks per-person compliance.
+
+```
+value = compliant_hours / total_hours
+```
+
+Where `compliant_hours` is the sum of each person's days within WIP limit across all developers and QAs, and `total_hours` is `total_persons * total_days`.
+
+A person is **compliant** if they were at or below their WIP limit for >= 80% of the days in the period (configurable via `compliance_threshold`).
+
+**Response includes:**
+
+- `developers` / `qas` -- per-role summary with `total_persons`, `persons_compliant`, `persons_over_limit`, `compliance_rate`
+- Each person has: `avg_wip`, `peak_wip`, `days_compliant`, `days_over_limit`, `compliance_pct`, `is_compliant`
+- Per-person `status_breakdown` showing average items per real state (e.g., Active: 2.1, Code Review: 0.8)
+
+**Drilldown** supports `developer_assignments` and `qa_assignments` metrics with an optional `?person=` filter to see items assigned to a specific person.
+
+
+| RAG   | Threshold |
+| ----- | --------- |
+| Green | >= 80%    |
+| Amber | 60-80%    |
+| Red   | < 60%     |
 
 
 All thresholds are configurable in `app/config/kpis.yaml`.

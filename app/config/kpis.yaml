@@ -43,3 +43,14 @@ kpis:
     rag:
       green_max: 1.0
       amber_max: 1.2
+
+  wip_discipline:
+    enabled: true
+    description: "Percentage of developers/QAs staying within personal WIP limits"
+    formula: "compliant_hours / total_hours"
+    dev_wip_limit: 3
+    qa_wip_limit: 2
+    compliance_threshold: 0.80
+    rag:
+      green_min: 0.80
+      amber_min: 0.60

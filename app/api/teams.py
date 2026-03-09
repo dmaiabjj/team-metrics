@@ -24,6 +24,7 @@ from app.services.kpi_service import (
     compute_delivery_predictability,
     compute_flow_hygiene,
     compute_rework_rate,
+    compute_wip_discipline,
     filter_deliverables_by_metric,
 )
 
@@ -44,6 +45,7 @@ class KPIName(str, Enum):
     REWORK_RATE = "rework-rate"
     DELIVERY_PREDICTABILITY = "delivery-predictability"
     FLOW_HYGIENE = "flow-hygiene"
+    WIP_DISCIPLINE = "wip-discipline"
 
 
 REWORK_METRICS = frozenset({
@@ -55,10 +57,14 @@ DP_METRICS = frozenset({
 FH_METRICS = frozenset({
     "items_in_queue",
 })
+WD_METRICS = frozenset({
+    "developer_assignments", "qa_assignments",
+})
 KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.REWORK_RATE: REWORK_METRICS,
     KPIName.DELIVERY_PREDICTABILITY: DP_METRICS,
     KPIName.FLOW_HYGIENE: FH_METRICS,
+    KPIName.WIP_DISCIPLINE: WD_METRICS,
 }
 
 
@@ -73,14 +79,20 @@ async def _compute_single_kpi(
         return compute_delivery_predictability(
             deliverables, kpi_config.delivery_predictability, start_date, end_date,
         )
-    # FLOW_HYGIENE
-    azure_client = get_azure_client(request) if request else None
+
     tc = get_team_config(team_id) if team_id else None
     if tc is None:
         raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
-    wip_limits = await resolve_wip_limits(azure_client, tc, kpi_config.flow_hygiene)
-    return compute_flow_hygiene(
-        deliverables, kpi_config.flow_hygiene, wip_limits, start_date, end_date,
+
+    if kpi_name == KPIName.FLOW_HYGIENE:
+        azure_client = get_azure_client(request) if request else None
+        wip_limits = await resolve_wip_limits(azure_client, tc, kpi_config.flow_hygiene)
+        return compute_flow_hygiene(
+            deliverables, kpi_config.flow_hygiene, wip_limits, start_date, end_date,
+        )
+
+    return compute_wip_discipline(
+        deliverables, kpi_config.wip_discipline, tc, start_date, end_date,
     )
 
 
@@ -143,6 +155,11 @@ async def get_team_kpis(
     if kpi_config.flow_hygiene.enabled:
         kpis.append(await _compute_single_kpi(
             KPIName.FLOW_HYGIENE, report.deliverables, kpi_config, start_date, end_date,
+            request=request, team_id=team_id,
+        ))
+    if kpi_config.wip_discipline.enabled:
+        kpis.append(await _compute_single_kpi(
+            KPIName.WIP_DISCIPLINE, report.deliverables, kpi_config, start_date, end_date,
             request=request, team_id=team_id,
         ))
     return TeamKPIsResponse(
@@ -214,6 +231,7 @@ async def get_kpi_drilldown(
     metric: str = Path(..., description="Metric to drill into"),
     start_date: date = Query(..., description="Start of period (inclusive)"),
     end_date: date = Query(..., description="End of period (inclusive)"),
+    person: str | None = Query(None, description="Filter to a specific person (for WIP discipline drilldown)"),
     skip: int = Query(0, ge=0, description="Number of items to skip"),
     limit: int = Query(100, ge=1, le=500, description="Max items to return"),
 ) -> DrilldownResponse:
@@ -236,6 +254,7 @@ async def get_kpi_drilldown(
         fh_config=kpi_config.flow_hygiene,
         start=start_date,
         end=end_date,
+        person=person,
     )
     total = len(filtered)
     return DrilldownResponse(

@@ -53,10 +53,21 @@ class FlowHygieneConfig(BaseModel):
     rag: FlowHygieneRAGThresholds
 
 
+class WIPDisciplineConfig(BaseModel):
+    enabled: bool = True
+    description: str = ""
+    formula: str = ""
+    dev_wip_limit: int = 3
+    qa_wip_limit: int = 2
+    compliance_threshold: float = Field(0.80, ge=0, le=1)
+    rag: RAGThresholdsHigherIsBetter
+
+
 class KPIConfig(BaseModel):
     rework_rate: ReworkRateConfig
     delivery_predictability: DeliveryPredictabilityConfig
     flow_hygiene: FlowHygieneConfig
+    wip_discipline: WIPDisciplineConfig
 
 
 class KPIsRoot(BaseModel):

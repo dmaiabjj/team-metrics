@@ -300,6 +300,59 @@
       }
     },
     {
+      "name": "Team KPI Detail - WIP Discipline",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "WIP Discipline KPI detail with per-developer/QA breakdown and status breakdown."
+      }
+    },
+    {
+      "name": "Drilldown - WIP Discipline / developer_assignments",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/developer_assignments?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "developer_assignments"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "person", "value": "", "description": "Optional: filter to a specific person", "disabled": true}
+          ]
+        },
+        "description": "Drilldown into developer assignments. Optionally filter by person name."
+      }
+    },
+    {
+      "name": "Drilldown - WIP Discipline / qa_assignments",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/wip-discipline/drilldown/qa_assignments?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "wip-discipline", "drilldown", "qa_assignments"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "person", "value": "", "description": "Optional: filter to a specific QA", "disabled": true}
+          ]
+        },
+        "description": "Drilldown into QA assignments. Optionally filter by person name."
+      }
+    },
+    {
       "name": "Cache - Invalidate All",
       "request": {
         "method": "DELETE",
