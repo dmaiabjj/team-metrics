@@ -129,6 +129,100 @@ class TestKPIEndpoints:
         assert r.status_code == 503
 
 
+class TestReworkRateEndpoints:
+    def test_rework_rate_missing_params(self, client):
+        r = client.get("/kpi/rework-rate")
+        assert r.status_code == 422
+
+    def test_rework_rate_unknown_team(self, client):
+        r = client.get("/kpi/rework-rate", params={
+            "team_id": "nonexistent-team",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 404
+
+    def test_rework_rate_no_azure_client(self, client):
+        r = client.get("/kpi/rework-rate", params={
+            "team_id": "game-services",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_rework_rate_summary_no_azure(self, client):
+        r = client.get("/kpi/rework-rate/summary", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_rework_rate_drilldown_unknown_team(self, client):
+        r = client.get("/kpi/rework-rate/drilldown", params={
+            "team_id": "nonexistent-team",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+            "metric": "items_reached_qa",
+        })
+        assert r.status_code == 404
+
+    def test_rework_rate_drilldown_invalid_metric(self, client):
+        r = client.get("/kpi/rework-rate/drilldown", params={
+            "team_id": "game-services",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+            "metric": "items_committed",
+        })
+        assert r.status_code == 422
+
+
+class TestDeliveryPredictabilityEndpoints:
+    def test_dp_missing_params(self, client):
+        r = client.get("/kpi/delivery-predictability")
+        assert r.status_code == 422
+
+    def test_dp_unknown_team(self, client):
+        r = client.get("/kpi/delivery-predictability", params={
+            "team_id": "nonexistent-team",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 404
+
+    def test_dp_no_azure_client(self, client):
+        r = client.get("/kpi/delivery-predictability", params={
+            "team_id": "game-services",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_dp_summary_no_azure(self, client):
+        r = client.get("/kpi/delivery-predictability/summary", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_dp_drilldown_unknown_team(self, client):
+        r = client.get("/kpi/delivery-predictability/drilldown", params={
+            "team_id": "nonexistent-team",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+            "metric": "items_committed",
+        })
+        assert r.status_code == 404
+
+    def test_dp_drilldown_invalid_metric(self, client):
+        r = client.get("/kpi/delivery-predictability/drilldown", params={
+            "team_id": "game-services",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+            "metric": "items_reached_qa",
+        })
+        assert r.status_code == 422
+
+
 class TestCacheEndpoints:
     def test_cache_stats_empty(self, client):
         r = client.get("/cache/stats")

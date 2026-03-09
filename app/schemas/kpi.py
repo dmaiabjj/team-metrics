@@ -109,3 +109,47 @@ class DrilldownResponse(BaseModel):
     metric: str
     total: int = Field(description="Total matching items before pagination")
     items: list[DeliverableRow] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Per-KPI endpoint responses
+# ---------------------------------------------------------------------------
+
+class ReworkRateResponse(BaseModel):
+    team_id: str
+    start_date: date
+    end_date: date
+    kpi: ReworkRateKPI
+
+
+class ReworkRateTeamEntry(BaseModel):
+    team_id: str
+    kpi: ReworkRateKPI
+
+
+class ReworkRateSummaryResponse(BaseModel):
+    start_date: date
+    end_date: date
+    average: AverageKPI
+    teams: list[ReworkRateTeamEntry] = Field(default_factory=list)
+    errors: list[TeamError] = Field(default_factory=list)
+
+
+class DeliveryPredictabilityResponse(BaseModel):
+    team_id: str
+    start_date: date
+    end_date: date
+    kpi: DeliveryPredictabilityKPI
+
+
+class DPTeamEntry(BaseModel):
+    team_id: str
+    kpi: DeliveryPredictabilityKPI
+
+
+class DeliveryPredictabilitySummaryResponse(BaseModel):
+    start_date: date
+    end_date: date
+    average: AverageKPI
+    teams: list[DPTeamEntry] = Field(default_factory=list)
+    errors: list[TeamError] = Field(default_factory=list)

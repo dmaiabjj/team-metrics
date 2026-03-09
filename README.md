@@ -670,6 +670,122 @@ Where `items_committed` = items started in the period (non-spillovers with `star
 
 All thresholds are configurable in `app/config/kpis.yaml`.
 
+### Per-KPI Endpoints
+
+Each KPI also has its own dedicated endpoints that return a single KPI object (not a list).
+
+#### `GET /kpi/rework-rate` -- single team
+
+```
+GET /kpi/rework-rate?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31
+```
+
+Response:
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "kpi": {
+    "name": "rework_rate",
+    "value": 0.10,
+    "display": "10.0%",
+    "rag": "green",
+    "items_with_rework": 5,
+    "items_reached_qa": 50,
+    "items_bounced_back": 3,
+    "total_bugs": 8,
+    "thresholds": {"green": "<= 10%", "amber": "10%-15%", "red": "> 15%"}
+  }
+}
+```
+
+#### `GET /kpi/rework-rate/summary` -- across all teams
+
+```
+GET /kpi/rework-rate/summary?start_date=2025-01-01&end_date=2025-01-31
+```
+
+Response:
+
+```json
+{
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "average": {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
+  "teams": [
+    {"team_id": "game-services", "kpi": {"name": "rework_rate", "value": 0.10, "...": "..."}},
+    {"team_id": "payment-services", "kpi": {"name": "rework_rate", "value": 0.06, "...": "..."}}
+  ],
+  "errors": []
+}
+```
+
+#### `GET /kpi/rework-rate/drilldown` -- drilldown
+
+```
+GET /kpi/rework-rate/drilldown?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&metric=items_with_rework
+```
+
+Available metrics: `items_reached_qa`, `items_with_rework`, `items_bounced_back`, `items_with_bugs`
+
+#### `GET /kpi/delivery-predictability` -- single team
+
+```
+GET /kpi/delivery-predictability?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31
+```
+
+Response:
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "kpi": {
+    "name": "delivery_predictability",
+    "value": 0.90,
+    "display": "90.0%",
+    "rag": "green",
+    "items_committed": 50,
+    "items_deployed": 45,
+    "items_started_in_period": 35,
+    "items_spillover": 15,
+    "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}
+  }
+}
+```
+
+#### `GET /kpi/delivery-predictability/summary` -- across all teams
+
+```
+GET /kpi/delivery-predictability/summary?start_date=2025-01-01&end_date=2025-01-31
+```
+
+Response:
+
+```json
+{
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "average": {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5},
+  "teams": [
+    {"team_id": "game-services", "kpi": {"name": "delivery_predictability", "value": 0.90, "...": "..."}},
+    {"team_id": "payment-services", "kpi": {"name": "delivery_predictability", "value": 0.85, "...": "..."}}
+  ],
+  "errors": []
+}
+```
+
+#### `GET /kpi/delivery-predictability/drilldown` -- drilldown
+
+```
+GET /kpi/delivery-predictability/drilldown?team_id=game-services&start_date=2025-01-01&end_date=2025-01-31&metric=items_deployed
+```
+
+Available metrics: `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover`
+
 ---
 
 ## Config

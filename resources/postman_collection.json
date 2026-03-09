@@ -178,6 +178,118 @@
       }
     },
     {
+      "name": "Rework Rate - Single Team",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/kpi/rework-rate?team_id={{team_id}}&start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["kpi", "rework-rate"],
+          "query": [
+            {"key": "team_id", "value": "{{team_id}}", "description": "Team slug"},
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Compute Rework Rate for one team. Returns a single kpi object."
+      }
+    },
+    {
+      "name": "Rework Rate - Summary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/kpi/rework-rate/summary?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["kpi", "rework-rate", "summary"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Rework Rate across all teams with per-team breakdown and average."
+      }
+    },
+    {
+      "name": "Rework Rate - Drilldown",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/kpi/rework-rate/drilldown?team_id={{team_id}}&start_date={{start_date}}&end_date={{end_date}}&metric=items_with_rework",
+          "host": ["{{base_url}}"],
+          "path": ["kpi", "rework-rate", "drilldown"],
+          "query": [
+            {"key": "team_id", "value": "{{team_id}}", "description": "Team slug"},
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "metric", "value": "items_with_rework", "description": "Rework metric: items_reached_qa, items_with_rework, items_bounced_back, items_with_bugs"},
+            {"key": "skip", "value": "0", "description": "Pagination offset"},
+            {"key": "limit", "value": "100", "description": "Max items to return (1-500)"}
+          ]
+        },
+        "description": "Drilldown into Rework Rate metrics for a single team."
+      }
+    },
+    {
+      "name": "Delivery Predictability - Single Team",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/kpi/delivery-predictability?team_id={{team_id}}&start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["kpi", "delivery-predictability"],
+          "query": [
+            {"key": "team_id", "value": "{{team_id}}", "description": "Team slug"},
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Compute Delivery Predictability for one team. Returns a single kpi object."
+      }
+    },
+    {
+      "name": "Delivery Predictability - Summary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/kpi/delivery-predictability/summary?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["kpi", "delivery-predictability", "summary"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Delivery Predictability across all teams with per-team breakdown and average."
+      }
+    },
+    {
+      "name": "Delivery Predictability - Drilldown",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/kpi/delivery-predictability/drilldown?team_id={{team_id}}&start_date={{start_date}}&end_date={{end_date}}&metric=items_deployed",
+          "host": ["{{base_url}}"],
+          "path": ["kpi", "delivery-predictability", "drilldown"],
+          "query": [
+            {"key": "team_id", "value": "{{team_id}}", "description": "Team slug"},
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "metric", "value": "items_deployed", "description": "DP metric: items_committed, items_deployed, items_started_in_period, items_spillover"},
+            {"key": "skip", "value": "0", "description": "Pagination offset"},
+            {"key": "limit", "value": "100", "description": "Max items to return (1-500)"}
+          ]
+        },
+        "description": "Drilldown into Delivery Predictability metrics for a single team."
+      }
+    },
+    {
       "name": "Cache - Invalidate All",
       "request": {
         "method": "DELETE",
