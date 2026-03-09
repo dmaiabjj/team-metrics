@@ -1,0 +1,104 @@
+{
+  "info": {
+    "name": "Azure DevOps Performance Report API",
+    "description": "Performance report endpoints for team deliverables and date range. Each deliverable has canonical_status: Development Active, QA Active, Delivered, or Backlog (real states e.g. New, Ready).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "team_id",
+      "value": "game-services"
+    },
+    {
+      "key": "team_ids",
+      "value": "game-services,payment-services"
+    },
+    {
+      "key": "start_date",
+      "value": "2025-01-01"
+    },
+    {
+      "key": "end_date",
+      "value": "2025-01-31"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Health check. No auth or params."
+      }
+    },
+    {
+      "name": "Report (single team)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/report?team_id={{team_id}}&start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["report"],
+          "query": [
+            {
+              "key": "team_id",
+              "value": "{{team_id}}",
+              "description": "Team slug, e.g. game-services"
+            },
+            {
+              "key": "start_date",
+              "value": "{{start_date}}",
+              "description": "Start of period (ISO date)"
+            },
+            {
+              "key": "end_date",
+              "value": "{{end_date}}",
+              "description": "End of period (ISO date)"
+            }
+          ]
+        },
+        "description": "Get performance report for one team and date range. Returns deliverables with description, status timeline, period boundary statuses, hierarchy, linked bugs/tasks, and role assignments (developer, qa, release_manager)."
+      }
+    },
+    {
+      "name": "Report (multiple teams)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/report/multi?team_ids={{team_ids}}&start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["report", "multi"],
+          "query": [
+            {
+              "key": "team_ids",
+              "value": "{{team_ids}}",
+              "description": "Comma-separated team slugs"
+            },
+            {
+              "key": "start_date",
+              "value": "{{start_date}}",
+              "description": "Start of period (ISO date)"
+            },
+            {
+              "key": "end_date",
+              "value": "{{end_date}}",
+              "description": "End of period (ISO date)"
+            }
+          ]
+        },
+        "description": "Get performance report for multiple teams. Returns { teams: [ { team_id, deliverables }, ... ] }. Each deliverable includes description, status timeline, period boundary statuses, and role assignments."
+      }
+    }
+  ]
+}

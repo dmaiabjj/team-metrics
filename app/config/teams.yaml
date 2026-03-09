@@ -1,0 +1,190 @@
+teams:
+  game-services:
+    project: "game-services"
+    area_paths:
+      - "game-services"
+      - "game-services\\Game Proxy Development"
+      - "game-services\\Games Developers"
+    deliverable_types:
+      - "User Story"
+      - "Issue"
+      - "Task"
+    container_types:
+      - "Epic"
+      - "Feature"
+    bug_types:
+      - "Bug"
+    states:
+      - canonical_status: "Development Active"
+        real_states:
+          - "Active"
+          - "Onhold"
+          - "Blocked"
+          - "Code Review"
+      - canonical_status: "QA Active"
+        real_states:
+          - "Ready for QA"
+          - "In QA"
+          - "QA bug pending"
+      - canonical_status: "Delivered"
+        real_states:
+          - "Release Candidate"
+          - "Closed"
+          - "Resolved"
+      - canonical_status: "Backlog"
+        real_states:
+          - "New"
+          - "Ready"
+
+  domain-tooling-services:
+    project: "domain-tooling-services"
+    area_paths:
+      - "domain-tooling-services"
+      - "domain-tooling-services\\BackOffice Team"
+    deliverable_types:
+      - "User Story"
+      - "Issue"
+      - "Task"
+    container_types:
+      - "Epic"
+      - "Feature"
+    bug_types:
+      - "Bug"
+    states:
+      - canonical_status: "Development Active"
+        real_states:
+          - "Active"
+          - "Onhold"
+          - "Blocked"
+          - "Code Review"
+      - canonical_status: "QA Active"
+        real_states:
+          - "Ready for QA"
+          - "In QA"
+          - "QA bug pending"
+      - canonical_status: "Delivered"
+        real_states:
+          - "Release Candidate"
+          - "Closed"
+          - "Resolved"
+      - canonical_status: "Backlog"
+        real_states:
+          - "New"
+          - "Ready"
+
+  payment-services:
+    project: "payment-services"
+    area_paths:
+      - "payment-services"
+      - "payment-services\\backend"
+      - "payment-services\\frontend"
+      - "payment-services\\frontend\\cashier"
+      - "payment-services\\frontend\\legacy-web"
+      - "payment-services\\frontend\\payment-admin-ui"
+      - "payment-services\\frontend\\payment-backoffice"
+      - "payment-services\\integration\\dod"
+      - "payment-services\\operations\\alerts"
+      - "payment-services\\operations\\hot-issues"
+      - "payment-services\\operations\\suport-tickets"
+    deliverable_types:
+      - "User Story"
+      - "Issue"
+      - "Task"
+    container_types:
+      - "Epic"
+      - "Feature"
+    bug_types:
+      - "Bug"
+    states:
+      - canonical_status: "Development Active"
+        real_states:
+          - "Active"
+          - "Onhold"
+          - "Blocked"
+          - "Code Review"
+          - "Resolved"
+      - canonical_status: "QA Active"
+        real_states:
+          - "Ready for QA"
+          - "In QA"
+          - "QA bug pending"
+      - canonical_status: "Delivered"
+        real_states:
+          - "Release Candidate"
+          - "Closed"
+      - canonical_status: "Backlog"
+        real_states:
+          - "New"
+          - "Ready"
+
+  player-engagement-services:
+    project: "player-engagement-services"
+    area_paths:
+      - "player-engagement-services"
+      - "player-engagement-services\\Data Analytics"
+      - "player-engagement-services\\Payment Team"
+    deliverable_types:
+      - "User Story"
+      - "Issue"
+      - "Task"
+    container_types:
+      - "Epic"
+      - "Feature"
+    bug_types:
+      - "Bug"
+    states:
+      - canonical_status: "Development Active"
+        real_states:
+          - "Active"
+          - "Onhold"
+          - "Blocked"
+          - "Code Review"
+      - canonical_status: "QA Active"
+        real_states:
+          - "Ready for QA"
+          - "In QA"
+          - "QA bug pending"
+      - canonical_status: "Delivered"
+        real_states:
+          - "Release Candidate"
+          - "Closed"
+          - "Resolved"
+      - canonical_status: "Backlog"
+        real_states:
+          - "New"
+          - "Ready"
+
+  rules-engine:
+    project: "rules-engine"
+    area_paths:
+      - "rules-engine"
+    deliverable_types:
+      - "User Story"
+      - "Issue"
+      - "Task"
+    container_types:
+      - "Epic"
+      - "Feature"
+    bug_types:
+      - "Bug"
+    states:
+      - canonical_status: "Development Active"
+        real_states:
+          - "Active"
+          - "Onhold"
+          - "Blocked"
+          - "Code Review"
+      - canonical_status: "QA Active"
+        real_states:
+          - "Ready for QA"
+          - "In QA"
+          - "QA bug pending"
+      - canonical_status: "Delivered"
+        real_states:
+          - "Release Candidate"
+          - "Closed"
+          - "Resolved"
+      - canonical_status: "Backlog"
+        real_states:
+          - "New"
+          - "Ready"

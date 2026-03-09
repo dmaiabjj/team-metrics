@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Environment and secrets
+.env
+.env.local
+*.local
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Debug and logs
+*.log
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Debug log from instrumentation
+debug-*.log

@@ -1,0 +1,1 @@
+# Adapters (Azure DevOps client)
