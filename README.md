@@ -359,6 +359,72 @@ post_mortem_sla_weeks: 2
 
 ---
 
+## Cache Management
+
+The API includes an in-memory two-layer cache to reduce Azure DevOps API calls:
+
+- **L1 (Report cache):** Caches full report responses keyed by `(team_id, start_date, end_date)`. Repeated identical queries return instantly.
+- **L2 (Work-item cache):** Caches individual work-item lookups used during parent/child resolution. Shared across all report requests.
+
+Both layers persist for the lifetime of the process and are cleared on restart. Use the endpoints below for manual invalidation.
+
+### Invalidate all caches
+
+**Request**
+
+```
+DELETE /cache
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "cleared": {
+    "reports": 5,
+    "work_items": 142
+  }
+}
+```
+
+### Invalidate cache for a specific team
+
+**Request**
+
+```
+DELETE /cache/{team_id}
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "team_id": "game-services",
+  "cleared": {
+    "reports": 2
+  }
+}
+```
+
+### Cache stats
+
+**Request**
+
+```
+GET /cache/stats
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "report_cache_entries": 3,
+  "work_item_cache_entries": 87
+}
+```
+
+---
+
 ## Config
 
 Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, state mappings, tech_debt_epic_ids, post_mortem_epic_ids, and post_mortem_sla_weeks per team. The five default teams are: **game-services**, **domain-tooling-services**, **payment-services**, **player-engagement-services**, **rules-engine**.

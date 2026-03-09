@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Azure DevOps Performance Report API",
-    "description": "Performance report endpoints for team deliverables and date range. Each deliverable includes tags, has_rework, is_spillover, bounces, bounce_details, is_technical_debt, is_post_mortem, post_mortem_sla_met, and delivery_days.",
+    "description": "Performance report endpoints for team deliverables and date range. Each deliverable includes tags, has_rework, is_spillover, bounces, bounce_details, is_technical_debt, is_post_mortem, post_mortem_sla_met, and delivery_days. Includes cache management endpoints for manual invalidation.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -98,6 +98,45 @@
           ]
         },
         "description": "Get performance report for multiple teams. Returns { teams: [ { team_id, deliverables }, ... ] }. Each deliverable includes description, status timeline, period boundary statuses, role assignments, tags (Code Defect, Scope / Requirements, Spillover), and has_rework."
+      }
+    },
+    {
+      "name": "Cache - Invalidate All",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/cache",
+          "host": ["{{base_url}}"],
+          "path": ["cache"]
+        },
+        "description": "Clear all cached data (L1 report cache + L2 work-item cache). Returns counts of cleared entries."
+      }
+    },
+    {
+      "name": "Cache - Invalidate Team",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/cache/{{team_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["cache", "{{team_id}}"]
+        },
+        "description": "Clear cached reports for a specific team. L2 work-item cache is unaffected."
+      }
+    },
+    {
+      "name": "Cache - Stats",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/cache/stats",
+          "host": ["{{base_url}}"],
+          "path": ["cache", "stats"]
+        },
+        "description": "Return current cache sizes (report entries and work-item entries)."
       }
     }
   ]

@@ -7,6 +7,7 @@ import logging
 from datetime import date, datetime, timezone
 
 from app.adapters.azure_devops import AzureDevOpsClient
+from app.cache import ReportCache, WorkItemCache
 from app.config.loader import TeamConfig, get_team_config, load_teams_config
 from app.schemas.report import BounceDetail, DeliverableRow, ReportResponse, StatusTimelineEntry, WorkItemRef
 from app.settings import get_settings
@@ -488,6 +489,7 @@ async def _resolve_parents(
     project: str,
     work_item: dict,
     team: TeamConfig,
+    wi_cache: WorkItemCache | None = None,
 ) -> tuple[WorkItemRef | None, WorkItemRef | None]:
     """Walk the parent hierarchy (up to MAX_PARENT_DEPTH) to find Epic and Feature."""
     epic_ref: WorkItemRef | None = None
@@ -505,7 +507,13 @@ async def _resolve_parents(
         if parent_id is None:
             break
 
-        parent_wi = await client.get_work_item(project, parent_id)
+        parent_wi: dict | None = None
+        if wi_cache is not None:
+            parent_wi = wi_cache.get(project, parent_id)
+        if parent_wi is None:
+            parent_wi = await client.get_work_item(project, parent_id)
+            if parent_wi and wi_cache is not None:
+                wi_cache.put(project, parent_id, parent_wi)
         if not parent_wi:
             logger.warning("Parent work item %d not found for project=%s", parent_id, project)
             break
@@ -542,6 +550,7 @@ async def _collect_children(
     work_item: dict,
     all_work_items_by_id: dict[int, dict],
     team: TeamConfig,
+    wi_cache: WorkItemCache | None = None,
 ) -> tuple[list[WorkItemRef], list[WorkItemRef]]:
     """Return (child_bugs, child_tasks) as WorkItemRef lists.
 
@@ -563,6 +572,14 @@ async def _collect_children(
     if not child_ids:
         return bugs, tasks
 
+    # Check L2 cache for children not yet in the in-memory lookup
+    if wi_cache is not None:
+        for cid in child_ids:
+            if cid not in all_work_items_by_id:
+                cached_wi = wi_cache.get(project, cid)
+                if cached_wi is not None:
+                    all_work_items_by_id[cid] = cached_wi
+
     missing_ids = [cid for cid in child_ids if cid not in all_work_items_by_id]
     if missing_ids:
         fetched = await client.get_work_items_batch(project, missing_ids, expand="None")
@@ -570,6 +587,8 @@ async def _collect_children(
             wid = wi.get("id")
             if wid:
                 all_work_items_by_id[wid] = wi
+                if wi_cache is not None:
+                    wi_cache.put(project, wid, wi)
 
     for cid in child_ids:
         child_wi = all_work_items_by_id.get(cid)
@@ -599,8 +618,16 @@ async def run_report(
     end_date: date,
     client: AzureDevOpsClient,
     teams: dict[str, TeamConfig] | None = None,
+    report_cache: ReportCache | None = None,
+    wi_cache: WorkItemCache | None = None,
 ) -> ReportResponse:
     """Generate performance report for one team and date range."""
+    if report_cache is not None:
+        cached = report_cache.get(team_id, start_date, end_date)
+        if cached is not None:
+            logger.info("Team %s: returning L1 cached report", team_id)
+            return cached
+
     if teams is None:
         teams = load_teams_config()
     team = get_team_config(team_id, teams)
@@ -668,10 +695,10 @@ async def run_report(
         canonical_status = real_to_canonical.get(state) or "Unknown"
 
         epic_ref, feature_ref = await _resolve_parents(
-            client, team.project, wi, team
+            client, team.project, wi, team, wi_cache
         )
         child_bugs, child_tasks = await _collect_children(
-            client, team.project, wi, by_id, team
+            client, team.project, wi, by_id, team, wi_cache
         )
 
         # Compute enrichments from cached revisions
@@ -738,9 +765,12 @@ async def run_report(
 
     logger.info("Team %s: report complete with %d deliverables", team_id, len(deliverables))
 
-    return ReportResponse(
+    response = ReportResponse(
         team_id=team_id,
         start_date=start_date,
         end_date=end_date,
         deliverables=deliverables,
     )
+    if report_cache is not None:
+        report_cache.put(team_id, start_date, end_date, response)
+    return response

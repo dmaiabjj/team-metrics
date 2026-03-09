@@ -10,7 +10,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.adapters.azure_devops import AzureDevOpsClient
+from app.api.cache import router as cache_router
 from app.api.report import router as report_router
+from app.cache import ReportCache, WorkItemCache
 from app.config.loader import load_teams_config
 from app.settings import get_settings
 
@@ -52,6 +54,9 @@ async def lifespan(app: FastAPI):
         logger.warning("Azure DevOps credentials not configured — API will return 503")
 
     app.state.azure_client = azure_client
+    app.state.report_cache = ReportCache()
+    app.state.wi_cache = WorkItemCache()
+    logger.info("In-memory caches initialised (L1 report + L2 work-item)")
 
     yield
 
@@ -67,6 +72,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(report_router, prefix="/report", tags=["report"])
+app.include_router(cache_router, prefix="/cache", tags=["cache"])
 
 
 # ---------------------------------------------------------------------------

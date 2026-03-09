@@ -49,6 +49,7 @@ def get_azure_client(request: Request) -> AzureDevOpsClient:
 
 @router.get("", response_model=ReportResponse)
 async def get_report(
+    request: Request,
     team_id: str = Query(..., description="Team slug, e.g. game-services"),
     start_date: date = Query(..., description="Start of period (inclusive)"),
     end_date: date = Query(..., description="End of period (inclusive)"),
@@ -62,11 +63,17 @@ async def get_report(
             status_code=404,
             detail=f"Unknown team_id: {team_id}. Known: {list(teams.keys())}",
         )
-    return await run_report(team_id, start_date, end_date, client, teams)
+    report_cache = getattr(request.app.state, "report_cache", None)
+    wi_cache = getattr(request.app.state, "wi_cache", None)
+    return await run_report(
+        team_id, start_date, end_date, client, teams,
+        report_cache=report_cache, wi_cache=wi_cache,
+    )
 
 
 @router.get("/multi", response_model=MultiTeamReportResponse)
 async def get_report_multi(
+    request: Request,
     team_ids: str = Query(..., description="Comma-separated team slugs"),
     start_date: date = Query(..., description="Start of period (inclusive)"),
     end_date: date = Query(..., description="End of period (inclusive)"),
@@ -80,9 +87,17 @@ async def get_report_multi(
     if unknown:
         raise HTTPException(status_code=404, detail=f"Unknown team_id(s): {unknown}")
 
-    # Run all team reports concurrently
+    report_cache = getattr(request.app.state, "report_cache", None)
+    wi_cache = getattr(request.app.state, "wi_cache", None)
+
     reports = await asyncio.gather(
-        *[run_report(tid, start_date, end_date, client, teams) for tid in ids]
+        *[
+            run_report(
+                tid, start_date, end_date, client, teams,
+                report_cache=report_cache, wi_cache=wi_cache,
+            )
+            for tid in ids
+        ]
     )
 
     return MultiTeamReportResponse(
