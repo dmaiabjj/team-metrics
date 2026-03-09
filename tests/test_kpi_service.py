@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
+
 import pytest
 
-from app.config.kpi_loader import RAGThresholds, ReworkRateConfig
-from app.schemas.kpi import RAGStatus, ReworkRateKPI
+from app.config.kpi_loader import (
+    DeliveryPredictabilityConfig,
+    RAGThresholds,
+    RAGThresholdsHigherIsBetter,
+    ReworkRateConfig,
+)
+from app.schemas.kpi import DeliveryPredictabilityKPI, RAGStatus, ReworkRateKPI
 from app.schemas.report import DeliverableRow, StatusTimelineEntry, WorkItemRef
 from app.services.kpi_service import (
+    compute_delivery_predictability,
     compute_kpi_average,
     compute_rework_rate,
     filter_deliverables_by_metric,
@@ -22,6 +30,14 @@ _DEFAULT_CONFIG = ReworkRateConfig(
     qa_canonical_status="QA Active",
 )
 
+_DEFAULT_DP_CONFIG = DeliveryPredictabilityConfig(
+    enabled=True,
+    description="test",
+    formula="test",
+    rag=RAGThresholdsHigherIsBetter(green_min=0.85, amber_min=0.70),
+    delivered_canonical_status="Delivered",
+)
+
 
 def _make_deliverable(
     wid: int = 1,
@@ -29,10 +45,13 @@ def _make_deliverable(
     tags: list[str] | None = None,
     bounces: int = 0,
     child_bugs: list[WorkItemRef] | None = None,
+    is_spillover: bool = False,
+    start_date: datetime | None = None,
+    status_at_end: str | None = None,
+    canonical_status: str | None = None,
 ) -> DeliverableRow:
     timeline = []
     if timeline_canons:
-        from datetime import datetime, timezone
         for i, canon in enumerate(timeline_canons):
             timeline.append(StatusTimelineEntry(
                 date=datetime(2025, 1, 1 + i, tzinfo=timezone.utc),
@@ -44,10 +63,14 @@ def _make_deliverable(
         work_item_type="User Story",
         title=f"Item {wid}",
         state="Active",
+        canonical_status=canonical_status,
         status_timeline=timeline,
         tags=tags or [],
         bounces=bounces,
         child_bugs=child_bugs or [],
+        is_spillover=is_spillover,
+        start_date=start_date,
+        status_at_end=status_at_end,
     )
 
 
@@ -152,6 +175,124 @@ class TestComputeReworkRate:
         assert result.items_bounced_back == 2
 
 
+class TestComputeDeliveryPredictability:
+    _period_start = date(2025, 1, 1)
+    _period_end = date(2025, 1, 31)
+
+    def test_empty_deliverables(self):
+        result = compute_delivery_predictability(
+            [], _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
+        )
+        assert result.value == 0.0
+        assert result.rag == RAGStatus.RED
+        assert result.items_committed == 0
+
+    def test_all_deployed(self):
+        items = [
+            _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
+            for i in range(10)
+        ]
+        result = compute_delivery_predictability(
+            items, _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
+        )
+        assert result.value == pytest.approx(1.0)
+        assert result.rag == RAGStatus.GREEN
+        assert result.items_committed == 10
+        assert result.items_deployed == 10
+        assert result.items_started_in_period == 10
+        assert result.items_spillover == 0
+
+    def test_none_deployed(self):
+        items = [
+            _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            for i in range(10)
+        ]
+        result = compute_delivery_predictability(
+            items, _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
+        )
+        assert result.value == 0.0
+        assert result.rag == RAGStatus.RED
+        assert result.items_committed == 10
+        assert result.items_deployed == 0
+
+    def test_mixed_started_and_spillover(self):
+        items = [
+            _make_deliverable(1, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Delivered"),
+            _make_deliverable(2, start_date=datetime(2025, 1, 12, tzinfo=timezone.utc), canonical_status="Development Active"),
+            _make_deliverable(3, is_spillover=True, canonical_status="Delivered"),
+            _make_deliverable(4, is_spillover=True, canonical_status="QA Active"),
+        ]
+        result = compute_delivery_predictability(
+            items, _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
+        )
+        assert result.items_committed == 4
+        assert result.items_deployed == 2
+        assert result.items_started_in_period == 2
+        assert result.items_spillover == 2
+        assert result.value == pytest.approx(0.5)
+        assert result.rag == RAGStatus.RED
+
+    def test_green_boundary(self):
+        started = [
+            _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
+            for i in range(85)
+        ]
+        not_deployed = [
+            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            for i in range(15)
+        ]
+        result = compute_delivery_predictability(
+            started + not_deployed, _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
+        )
+        assert result.value == pytest.approx(0.85)
+        assert result.rag == RAGStatus.GREEN
+
+    def test_amber_range(self):
+        deployed = [
+            _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
+            for i in range(75)
+        ]
+        remaining = [
+            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            for i in range(25)
+        ]
+        result = compute_delivery_predictability(
+            deployed + remaining, _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
+        )
+        assert result.value == pytest.approx(0.75)
+        assert result.rag == RAGStatus.AMBER
+
+    def test_items_outside_period_not_counted(self):
+        items = [
+            _make_deliverable(1, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc), canonical_status="Delivered"),
+            _make_deliverable(2, start_date=datetime(2024, 12, 1, tzinfo=timezone.utc), canonical_status="Delivered"),
+        ]
+        result = compute_delivery_predictability(
+            items, _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
+        )
+        assert result.items_committed == 1
+        assert result.items_deployed == 1
+
+    def test_custom_thresholds(self):
+        config = DeliveryPredictabilityConfig(
+            enabled=True,
+            rag=RAGThresholdsHigherIsBetter(green_min=0.90, amber_min=0.80),
+            delivered_canonical_status="Delivered",
+        )
+        items = [
+            _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
+            for i in range(85)
+        ] + [
+            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            for i in range(15)
+        ]
+        result = compute_delivery_predictability(
+            items, config, self._period_start, self._period_end,
+        )
+        assert result.value == pytest.approx(0.85)
+        assert result.rag == RAGStatus.AMBER
+
+
 class TestComputeKpiAverage:
     def _make_kpi(self, value: float) -> ReworkRateKPI:
         return ReworkRateKPI(
@@ -183,6 +324,24 @@ class TestComputeKpiAverage:
         assert result.rag == RAGStatus.GREEN
         assert result.team_count == 0
 
+    def test_dp_average(self):
+        kpis = [
+            DeliveryPredictabilityKPI(
+                value=0.90, display="90.0%", rag=RAGStatus.GREEN,
+                items_committed=20, items_deployed=18,
+                items_started_in_period=15, items_spillover=5,
+            ),
+            DeliveryPredictabilityKPI(
+                value=0.70, display="70.0%", rag=RAGStatus.AMBER,
+                items_committed=10, items_deployed=7,
+                items_started_in_period=8, items_spillover=2,
+            ),
+        ]
+        result = compute_kpi_average("delivery_predictability", kpis, _DEFAULT_DP_CONFIG)
+        assert result.value == pytest.approx(0.80)
+        assert result.rag == RAGStatus.AMBER
+        assert result.team_count == 2
+
 
 class TestFilterDeliverablesByMetric:
     def test_items_reached_qa(self):
@@ -191,7 +350,7 @@ class TestFilterDeliverablesByMetric:
             _make_deliverable(2, ["Development Active"]),
             _make_deliverable(3, ["Development Active", "QA Active"]),
         ]
-        result = filter_deliverables_by_metric(items, "items_reached_qa", _DEFAULT_CONFIG)
+        result = filter_deliverables_by_metric(items, "items_reached_qa", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 2
         assert {d.id for d in result} == {1, 3}
 
@@ -201,7 +360,7 @@ class TestFilterDeliverablesByMetric:
             _make_deliverable(2, ["QA Active"]),
             _make_deliverable(3, ["QA Active"], tags=["Scope / Requirements"]),
         ]
-        result = filter_deliverables_by_metric(items, "items_with_rework", _DEFAULT_CONFIG)
+        result = filter_deliverables_by_metric(items, "items_with_rework", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 2
         assert {d.id for d in result} == {1, 3}
 
@@ -210,7 +369,7 @@ class TestFilterDeliverablesByMetric:
             _make_deliverable(1, ["QA Active"], bounces=1),
             _make_deliverable(2, ["QA Active"], bounces=0),
         ]
-        result = filter_deliverables_by_metric(items, "items_bounced_back", _DEFAULT_CONFIG)
+        result = filter_deliverables_by_metric(items, "items_bounced_back", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 1
         assert result[0].id == 1
 
@@ -219,10 +378,61 @@ class TestFilterDeliverablesByMetric:
             _make_deliverable(1, ["QA Active"], child_bugs=[WorkItemRef(id=100)]),
             _make_deliverable(2, ["QA Active"]),
         ]
-        result = filter_deliverables_by_metric(items, "items_with_bugs", _DEFAULT_CONFIG)
+        result = filter_deliverables_by_metric(items, "items_with_bugs", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 1
         assert result[0].id == 1
 
     def test_unknown_metric_raises(self):
         with pytest.raises(ValueError, match="Unknown metric"):
-            filter_deliverables_by_metric([], "invalid_metric", _DEFAULT_CONFIG)
+            filter_deliverables_by_metric([], "invalid_metric", rework_config=_DEFAULT_CONFIG)
+
+    def test_dp_items_committed(self):
+        items = [
+            _make_deliverable(1, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc)),
+            _make_deliverable(2, is_spillover=True),
+            _make_deliverable(3, start_date=datetime(2024, 12, 1, tzinfo=timezone.utc)),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "items_committed",
+            dp_config=_DEFAULT_DP_CONFIG, start=date(2025, 1, 1), end=date(2025, 1, 31),
+        )
+        assert len(result) == 2
+        assert {d.id for d in result} == {1, 2}
+
+    def test_dp_items_deployed(self):
+        items = [
+            _make_deliverable(1, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Delivered"),
+            _make_deliverable(2, is_spillover=True, canonical_status="Development Active"),
+            _make_deliverable(3, is_spillover=True, canonical_status="Delivered"),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "items_deployed",
+            dp_config=_DEFAULT_DP_CONFIG, start=date(2025, 1, 1), end=date(2025, 1, 31),
+        )
+        assert len(result) == 2
+        assert {d.id for d in result} == {1, 3}
+
+    def test_dp_items_started_in_period(self):
+        items = [
+            _make_deliverable(1, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc)),
+            _make_deliverable(2, is_spillover=True),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "items_started_in_period",
+            dp_config=_DEFAULT_DP_CONFIG, start=date(2025, 1, 1), end=date(2025, 1, 31),
+        )
+        assert len(result) == 1
+        assert result[0].id == 1
+
+    def test_dp_items_spillover(self):
+        items = [
+            _make_deliverable(1, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc)),
+            _make_deliverable(2, is_spillover=True),
+            _make_deliverable(3, is_spillover=True),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "items_spillover",
+            dp_config=_DEFAULT_DP_CONFIG, start=date(2025, 1, 1), end=date(2025, 1, 31),
+        )
+        assert len(result) == 2
+        assert {d.id for d in result} == {2, 3}

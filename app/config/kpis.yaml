@@ -10,3 +10,12 @@ kpis:
       - "Code Defect"
       - "Scope / Requirements"
     qa_canonical_status: "QA Active"
+
+  delivery_predictability:
+    enabled: true
+    description: "Ratio of items deployed vs items committed to the period"
+    formula: "items_deployed / items_committed"
+    rag:
+      green_min: 0.85
+      amber_min: 0.70
+    delivered_canonical_status: "Delivered"

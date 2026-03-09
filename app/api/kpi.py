@@ -25,6 +25,7 @@ from app.schemas.kpi import (
 )
 from app.schemas.report import ErrorResponse
 from app.services.kpi_service import (
+    compute_delivery_predictability,
     compute_kpi_average,
     compute_rework_rate,
     filter_deliverables_by_metric,
@@ -50,6 +51,10 @@ class DrilldownMetric(str, Enum):
     ITEMS_WITH_REWORK = "items_with_rework"
     ITEMS_BOUNCED_BACK = "items_bounced_back"
     ITEMS_WITH_BUGS = "items_with_bugs"
+    ITEMS_COMMITTED = "items_committed"
+    ITEMS_DEPLOYED = "items_deployed"
+    ITEMS_STARTED_IN_PERIOD = "items_started_in_period"
+    ITEMS_SPILLOVER = "items_spillover"
 
 
 async def _get_deliverables(request: Request, team_id: str, start_date: date, end_date: date):
@@ -92,9 +97,13 @@ async def get_kpis(
     """Compute KPIs for one team."""
     deliverables = await _get_deliverables(request, team_id, start_date, end_date)
     kpi_config = load_kpi_config()
-    kpis = []
+    kpis: list = []
     if kpi_config.rework_rate.enabled:
         kpis.append(compute_rework_rate(deliverables, kpi_config.rework_rate))
+    if kpi_config.delivery_predictability.enabled:
+        kpis.append(compute_delivery_predictability(
+            deliverables, kpi_config.delivery_predictability, start_date, end_date,
+        ))
     return KPIResponse(
         team_id=team_id,
         start_date=start_date,
@@ -143,6 +152,7 @@ async def get_kpi_summary(
     team_entries: list[TeamKPIEntry] = []
     team_errors: list[TeamError] = []
     all_rework_kpis = []
+    all_dp_kpis = []
 
     for tid, result in zip(team_ids, results):
         if isinstance(result, Exception):
@@ -150,17 +160,31 @@ async def get_kpi_summary(
             team_errors.append(TeamError(team_id=tid, error=str(result)))
             continue
         report = result
-        kpis = []
+        kpis: list = []
         if kpi_config.rework_rate.enabled:
             rw = compute_rework_rate(report.deliverables, kpi_config.rework_rate)
             kpis.append(rw)
             all_rework_kpis.append(rw)
+        if kpi_config.delivery_predictability.enabled:
+            dp = compute_delivery_predictability(
+                report.deliverables, kpi_config.delivery_predictability,
+                start_date, end_date,
+            )
+            kpis.append(dp)
+            all_dp_kpis.append(dp)
         team_entries.append(TeamKPIEntry(team_id=report.team_id, kpis=kpis))
 
     averages: list[AverageKPI] = []
     if kpi_config.rework_rate.enabled and all_rework_kpis:
         averages.append(
             compute_kpi_average("rework_rate", all_rework_kpis, kpi_config.rework_rate)
+        )
+    if kpi_config.delivery_predictability.enabled and all_dp_kpis:
+        averages.append(
+            compute_kpi_average(
+                "delivery_predictability", all_dp_kpis,
+                kpi_config.delivery_predictability,
+            )
         )
 
     return KPISummaryResponse(
@@ -189,7 +213,12 @@ async def get_kpi_drilldown(
 
     try:
         filtered = filter_deliverables_by_metric(
-            deliverables, metric.value, kpi_config.rework_rate,
+            deliverables,
+            metric.value,
+            rework_config=kpi_config.rework_rate,
+            dp_config=kpi_config.delivery_predictability,
+            start=start_date,
+            end=end_date,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

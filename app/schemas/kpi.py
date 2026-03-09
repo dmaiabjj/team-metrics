@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
+from typing import Annotated, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Discriminator, Field, Tag
 
 from app.schemas.report import DeliverableRow
 
@@ -34,16 +35,50 @@ class ReworkRateKPI(BaseModel):
     )
 
 
+class DeliveryPredictabilityKPI(BaseModel):
+    name: str = "delivery_predictability"
+    value: float = Field(description="Predictability as a decimal (e.g. 0.90 for 90%)")
+    display: str = Field(description="Human-readable percentage (e.g. '90.0%')")
+    rag: RAGStatus
+    items_committed: int
+    items_deployed: int
+    items_started_in_period: int
+    items_spillover: int
+    thresholds: dict[str, str] = Field(
+        default_factory=lambda: {
+            "green": ">= 85%",
+            "amber": "70-85%",
+            "red": "< 70%",
+        }
+    )
+
+
+def _kpi_discriminator(v: dict | BaseModel) -> str:
+    name = v.get("name") if isinstance(v, dict) else getattr(v, "name", None)
+    if name == "delivery_predictability":
+        return "delivery_predictability"
+    return "rework_rate"
+
+
+KPIResult = Annotated[
+    Union[
+        Annotated[ReworkRateKPI, Tag("rework_rate")],
+        Annotated[DeliveryPredictabilityKPI, Tag("delivery_predictability")],
+    ],
+    Discriminator(_kpi_discriminator),
+]
+
+
 class KPIResponse(BaseModel):
     team_id: str
     start_date: date
     end_date: date
-    kpis: list[ReworkRateKPI] = Field(default_factory=list)
+    kpis: list[KPIResult] = Field(default_factory=list)
 
 
 class TeamKPIEntry(BaseModel):
     team_id: str
-    kpis: list[ReworkRateKPI] = Field(default_factory=list)
+    kpis: list[KPIResult] = Field(default_factory=list)
 
 
 class AverageKPI(BaseModel):

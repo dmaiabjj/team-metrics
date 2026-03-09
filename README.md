@@ -579,6 +579,17 @@ Response:
       "items_bounced_back": 3,
       "total_bugs": 8,
       "thresholds": {"green": "<= 10%", "amber": "10%-15%", "red": "> 15%"}
+    },
+    {
+      "name": "delivery_predictability",
+      "value": 0.90,
+      "display": "90.0%",
+      "rag": "green",
+      "items_committed": 50,
+      "items_deployed": 45,
+      "items_started_in_period": 35,
+      "items_spillover": 15,
+      "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}
     }
   ]
 }
@@ -599,12 +610,14 @@ Response:
   "start_date": "2025-01-01",
   "end_date": "2025-01-31",
   "averages": [
-    {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5}
+    {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
+    {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5}
   ],
   "teams": [
-    {"team_id": "game-services", "kpis": [{"name": "rework_rate", "value": 0.10, "...": "..."}]},
-    {"team_id": "payment-services", "kpis": [{"name": "rework_rate", "value": 0.06, "...": "..."}]}
-  ]
+    {"team_id": "game-services", "kpis": [{"name": "rework_rate", "...": "..."}, {"name": "delivery_predictability", "...": "..."}]},
+    {"team_id": "payment-services", "kpis": [{"name": "rework_rate", "...": "..."}, {"name": "delivery_predictability", "...": "..."}]}
+  ],
+  "errors": []
 }
 ```
 
@@ -618,26 +631,44 @@ Returns the full deliverable rows filtered to items matching the metric. Support
 
 Available `metric` values:
 
-| Metric | Description |
-|--------|-------------|
-| `items_reached_qa` | Deliverables that were in QA Active at any point |
-| `items_with_rework` | Subset with rework tags (Code Defect or Scope/Requirements) |
-| `items_bounced_back` | Deliverables with bounces > 0 |
-| `items_with_bugs` | Deliverables with at least one linked bug |
+| Metric | KPI | Description |
+|--------|-----|-------------|
+| `items_reached_qa` | Rework Rate | Deliverables that were in QA Active at any point |
+| `items_with_rework` | Rework Rate | Subset with rework tags (Code Defect or Scope/Requirements) |
+| `items_bounced_back` | Rework Rate | Deliverables with bounces > 0 |
+| `items_with_bugs` | Rework Rate | Deliverables with at least one linked bug |
+| `items_committed` | Delivery Predictability | Items started in period + spillovers |
+| `items_deployed` | Delivery Predictability | Committed items that ended in Delivered status |
+| `items_started_in_period` | Delivery Predictability | Items whose start_date falls within the period |
+| `items_spillover` | Delivery Predictability | Items that were already active before the period |
 
-### Rework Rate formula
+### Rework Rate
 
 ```
 rework_rate = items_with_rework / items_reached_qa
 ```
-
-RAG thresholds (configurable in `app/config/kpis.yaml`):
 
 | RAG | Threshold |
 |-----|-----------|
 | Green | <= 10% |
 | Amber | 10-15% |
 | Red | > 15% |
+
+### Delivery Predictability
+
+```
+delivery_predictability = items_deployed / items_committed
+```
+
+Where `items_committed` = items started in the period (non-spillovers with `start_date` in range) + spillovers (items already active before the period). `items_deployed` = committed items that ended the period in Delivered status.
+
+| RAG | Threshold |
+|-----|-----------|
+| Green | >= 85% |
+| Amber | 70-85% |
+| Red | < 70% |
+
+All thresholds are configurable in `app/config/kpis.yaml`.
 
 ---
 

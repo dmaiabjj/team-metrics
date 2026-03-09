@@ -10,8 +10,15 @@ from pydantic import BaseModel, Field
 
 
 class RAGThresholds(BaseModel):
+    """Lower-is-better thresholds (e.g. rework rate)."""
     green_max: float = Field(..., ge=0, le=1)
     amber_max: float = Field(..., ge=0, le=1)
+
+
+class RAGThresholdsHigherIsBetter(BaseModel):
+    """Higher-is-better thresholds (e.g. delivery predictability)."""
+    green_min: float = Field(..., ge=0, le=1)
+    amber_min: float = Field(..., ge=0, le=1)
 
 
 class ReworkRateConfig(BaseModel):
@@ -23,8 +30,17 @@ class ReworkRateConfig(BaseModel):
     qa_canonical_status: str = "QA Active"
 
 
+class DeliveryPredictabilityConfig(BaseModel):
+    enabled: bool = True
+    description: str = ""
+    formula: str = ""
+    rag: RAGThresholdsHigherIsBetter
+    delivered_canonical_status: str = "Delivered"
+
+
 class KPIConfig(BaseModel):
     rework_rate: ReworkRateConfig
+    delivery_predictability: DeliveryPredictabilityConfig
 
 
 class KPIsRoot(BaseModel):

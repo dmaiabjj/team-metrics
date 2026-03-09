@@ -115,7 +115,7 @@
             {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
           ]
         },
-        "description": "Compute KPIs for one team. Returns rework rate with RAG status, breakdown figures (items_with_rework, items_reached_qa, items_bounced_back, total_bugs), and configurable thresholds."
+        "description": "Compute KPIs for one team. Returns rework rate and delivery predictability with RAG status, breakdown figures, and configurable thresholds."
       }
     },
     {
@@ -132,7 +132,7 @@
             {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
           ]
         },
-        "description": "Compute KPIs for all configured teams. Returns per-KPI averages across teams and each team's individual breakdown."
+        "description": "Compute KPIs for all configured teams. Returns per-KPI averages (rework rate, delivery predictability) across teams and each team's individual breakdown."
       }
     },
     {
@@ -148,12 +148,33 @@
             {"key": "team_id", "value": "{{team_id}}", "description": "Team slug"},
             {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
             {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
-            {"key": "metric", "value": "items_with_rework", "description": "Metric to drill into: items_reached_qa, items_with_rework, items_bounced_back, items_with_bugs"},
+            {"key": "metric", "value": "items_with_rework", "description": "Metric to drill into: items_reached_qa, items_with_rework, items_bounced_back, items_with_bugs, items_committed, items_deployed, items_started_in_period, items_spillover"},
             {"key": "skip", "value": "0", "description": "Pagination offset"},
             {"key": "limit", "value": "100", "description": "Max items to return (1-500)"}
           ]
         },
         "description": "Return full DeliverableRow objects filtered to items behind a specific KPI metric. Supports skip/limit pagination."
+      }
+    },
+    {
+      "name": "KPI - Drilldown (Delivery Predictability)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/kpi/drilldown?team_id={{team_id}}&start_date={{start_date}}&end_date={{end_date}}&metric=items_deployed",
+          "host": ["{{base_url}}"],
+          "path": ["kpi", "drilldown"],
+          "query": [
+            {"key": "team_id", "value": "{{team_id}}", "description": "Team slug"},
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "metric", "value": "items_deployed", "description": "Delivery Predictability metric: items_committed, items_deployed, items_started_in_period, items_spillover"},
+            {"key": "skip", "value": "0", "description": "Pagination offset"},
+            {"key": "limit", "value": "100", "description": "Max items to return (1-500)"}
+          ]
+        },
+        "description": "Return full DeliverableRow objects for a Delivery Predictability metric. Supports skip/limit pagination."
       }
     },
     {
