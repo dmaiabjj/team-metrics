@@ -128,7 +128,8 @@ GET /dashboard?start_date=2025-01-01&end_date=2025-01-31
   "end_date": "2025-01-31",
   "averages": [
     {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
-    {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5}
+    {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5},
+    {"name": "flow_hygiene", "value": 0.67, "display": "0.67", "rag": "green", "team_count": 5}
   ],
   "teams": [
     {
@@ -188,7 +189,7 @@ GET /teams/{team_id}/kpis/{kpi_name}?start_date=2025-01-01&end_date=2025-01-31
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `team_id` | path | Yes | Team slug |
-| `kpi_name` | path | Yes | `rework-rate` or `delivery-predictability` |
+| `kpi_name` | path | Yes | `rework-rate`, `delivery-predictability`, or `flow-hygiene` |
 | `start_date` | date | Yes | Start of period (ISO) |
 | `end_date` | date | Yes | End of period (ISO) |
 
@@ -234,7 +235,7 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | Parameter    | Type | Required | Description                                |
 | ------------ | ---- | -------- | ------------------------------------------ |
 | `team_id`    | path | Yes      | Team slug                                  |
-| `kpi_name`   | path | Yes      | `rework-rate` or `delivery-predictability` |
+| `kpi_name`   | path | Yes      | `rework-rate`, `delivery-predictability`, or `flow-hygiene` |
 | `metric`     | path | Yes      | Metric to drill into (see table below)     |
 | `start_date` | date | Yes      | Start of period (ISO)                      |
 | `end_date`   | date | Yes      | End of period (ISO)                        |
@@ -249,6 +250,7 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | ------------------------- | --------------------------------------------------------------------------------- |
 | `rework-rate`             | `items_reached_qa`, `items_with_rework`, `items_bounced_back`, `items_with_bugs`  |
 | `delivery-predictability` | `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover` |
+| `flow-hygiene`            | `items_in_queue`                                                                  |
 
 
 **Response** `200 OK`
@@ -588,13 +590,38 @@ Where `items_committed` = items started in the period (non-spillovers with `star
 | Red   | < 70%     |
 
 
+### Flow Hygiene
+
+Measures whether work flows smoothly without bottling up in wait states. Computed **per state** with individual WIP limits. The overall value is the worst (max) queue_load across all monitored states.
+
+```
+queue_load(state) = avg_items_in_state / wip_limit_for_state
+value = max(queue_load) across all queue states
+```
+
+WIP limits are resolved with a 3-tier fallback:
+
+1. **Azure DevOps Board** -- `itemLimit` from board column (live)
+2. **teams.yaml** -- `wip_limits` per-team override
+3. **kpis.yaml** -- `default_wip_limits` global fallback
+
+The response includes a per-state breakdown with `wip_limit_source` indicating where each limit came from (`azure_devops`, `team_config`, or `global_default`).
+
+
+| RAG   | Threshold |
+| ----- | --------- |
+| Green | <= 1.0    |
+| Amber | 1.0-1.2   |
+| Red   | > 1.2     |
+
+
 All thresholds are configurable in `app/config/kpis.yaml`.
 
 ---
 
 ## Config
 
-Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, state mappings, tech_debt_epic_ids, post_mortem_epic_ids, and post_mortem_sla_weeks per team. The five default teams are: **game-services**, **domain-tooling-service**items_with_rework**s**, **payment-services**, **player-engagement-services**, **rules-engine**.
+Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, state mappings, tech_debt_epic_ids, post_mortem_epic_ids, post_mortem_sla_weeks, board_name, and wip_limits per team. The five default teams are: **game-services**, **domain-tooling-services**, **payment-services**, **player-engagement-services**, **rules-engine**.
 
 **Canonical statuses** (each maps from real Azure DevOps states; configurable per team in `states`):
 

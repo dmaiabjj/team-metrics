@@ -19,3 +19,27 @@ kpis:
       green_min: 0.85
       amber_min: 0.70
     delivered_canonical_status: "Delivered"
+
+  flow_hygiene:
+    enabled: true
+    description: "Ratio of items queuing in wait states against per-state WIP limits"
+    formula: "max(avg_items_in_state / wip_limit_for_state) across all queue states"
+    queue_states:
+      - "Active"
+      - "Onhold"
+      - "Blocked"
+      - "Code Review"
+      - "Ready for QA"
+      - "In QA"
+      - "QA bug pending"
+    default_wip_limits:
+      "Active": 10
+      "Onhold": 3
+      "Blocked": 3
+      "Code Review": 3
+      "Ready for QA": 3
+      "In QA": 3
+      "QA bug pending": 3
+    rag:
+      green_max: 1.0
+      amber_max: 1.2

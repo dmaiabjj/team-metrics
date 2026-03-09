@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date
 
 from fastapi import HTTPException, Request
 
 from app.adapters.azure_devops import AzureDevOpsClient
-from app.config.team_loader import load_teams_config
+from app.config.kpi_loader import FlowHygieneConfig
+from app.config.team_loader import TeamConfig, load_teams_config
 from app.services.report_service import run_report
 from app.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def validate_date_range(start_date: date, end_date: date) -> None:
@@ -63,6 +67,43 @@ async def get_team_report(request: Request, team_id: str, start_date: date, end_
             detail=f"Report generation timed out after {settings.report_timeout}s",
         )
     return report
+
+
+async def resolve_wip_limits(
+    azure_client: AzureDevOpsClient | None,
+    team_config: TeamConfig,
+    fh_config: FlowHygieneConfig,
+) -> dict[str, tuple[int, str]]:
+    """Resolve WIP limits per state with 3-tier fallback.
+
+    Priority: Azure DevOps board > teams.yaml > kpis.yaml default.
+    Returns {state: (limit, source)}.
+    """
+    azure_limits: dict[str, int] = {}
+    if azure_client is not None:
+        try:
+            azure_limits = await azure_client.get_board_wip_limits(
+                team_config.project, team_config.board_name,
+                team=team_config.azure_team,
+            )
+        except Exception:
+            logger.warning("Failed to fetch board WIP limits, falling back to config", exc_info=True)
+
+    azure_lower = {k.lower(): v for k, v in azure_limits.items()}
+    team_wip = team_config.wip_limits or {}
+    team_lower = {k.lower(): v for k, v in team_wip.items()}
+
+    result: dict[str, tuple[int, str]] = {}
+    for state in fh_config.queue_states:
+        key = state.lower()
+        az_val = azure_lower.get(key, 0)
+        if az_val > 0:
+            result[state] = (az_val, "azure_devops")
+        elif team_lower.get(key, 0) > 0:
+            result[state] = (team_lower[key], "team_config")
+        else:
+            result[state] = (fh_config.default_wip_limits.get(state, 1), "global_default")
+    return result
 
 
 async def fetch_all_reports(request: Request, start_date: date, end_date: date):

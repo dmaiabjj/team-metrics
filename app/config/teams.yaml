@@ -1,6 +1,7 @@
 teams:
   game-services:
     project: "game-services"
+    azure_team: "game-services Team"
     area_paths:
       - "game-services"
       - "game-services\\Game Proxy Development"
@@ -16,7 +17,10 @@ teams:
       - "Bug"
     tech_debt_epic_ids: []
     post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 2
+    post_mortem_sla_weeks: 8
+    board_name: "Stories"
+    wip_limits:
+
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -41,6 +45,7 @@ teams:
 
   domain-tooling-services:
     project: "domain-tooling-services"
+    azure_team: "domain-tooling-services Team"
     area_paths:
       - "domain-tooling-services"
       - "domain-tooling-services\\BackOffice Team"
@@ -55,7 +60,10 @@ teams:
       - "Bug"
     tech_debt_epic_ids: []
     post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 2
+    post_mortem_sla_weeks: 8
+    board_name: "Stories"
+    wip_limits:
+
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -80,6 +88,7 @@ teams:
 
   payment-services:
     project: "payment-services"
+    azure_team: "payment-services Team"
     area_paths:
       - "payment-services"
       - "payment-services\\backend"
@@ -103,7 +112,10 @@ teams:
       - "Bug"
     tech_debt_epic_ids: []
     post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 2
+    post_mortem_sla_weeks: 8
+    board_name: "Stories"
+    wip_limits:
+
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -128,6 +140,7 @@ teams:
 
   player-engagement-services:
     project: "player-engagement-services"
+    azure_team: "Bonus Engine Team"
     area_paths:
       - "player-engagement-services"
       - "player-engagement-services\\Data Analytics"
@@ -143,7 +156,10 @@ teams:
       - "Bug"
     tech_debt_epic_ids: []
     post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 2
+    post_mortem_sla_weeks: 8
+    board_name: "Stories"
+    wip_limits:
+
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -168,6 +184,7 @@ teams:
 
   rules-engine:
     project: "rules-engine"
+    azure_team: "Rules Engine Developers"
     area_paths:
       - "rules-engine"
     deliverable_types:
@@ -181,7 +198,10 @@ teams:
       - "Bug"
     tech_debt_epic_ids: []
     post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 2
+    post_mortem_sla_weeks: 8
+    board_name: "Stories"
+    wip_limits:
+
     states:
       - canonical_status: "Development Active"
         real_states:

@@ -38,9 +38,25 @@ class DeliveryPredictabilityConfig(BaseModel):
     delivered_canonical_status: str = "Delivered"
 
 
+class FlowHygieneRAGThresholds(BaseModel):
+    """Lower-is-better thresholds for queue_load (can exceed 1.0)."""
+    green_max: float = Field(..., ge=0)
+    amber_max: float = Field(..., ge=0)
+
+
+class FlowHygieneConfig(BaseModel):
+    enabled: bool = True
+    description: str = ""
+    formula: str = ""
+    queue_states: list[str] = Field(default_factory=list)
+    default_wip_limits: dict[str, int] = Field(default_factory=dict)
+    rag: FlowHygieneRAGThresholds
+
+
 class KPIConfig(BaseModel):
     rework_rate: ReworkRateConfig
     delivery_predictability: DeliveryPredictabilityConfig
+    flow_hygiene: FlowHygieneConfig
 
 
 class KPIsRoot(BaseModel):

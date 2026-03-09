@@ -10,9 +10,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.api.helpers import fetch_all_reports, validate_date_range
+from app.api.helpers import (
+    fetch_all_reports,
+    get_azure_client,
+    resolve_wip_limits,
+    validate_date_range,
+)
 from app.auth import require_api_key
 from app.config.kpi_loader import load_kpi_config
+from app.config.team_loader import get_team_config
 from app.schemas.kpi import (
     AverageKPI,
     DashboardResponse,
@@ -22,6 +28,7 @@ from app.schemas.kpi import (
 from app.schemas.report import ErrorResponse
 from app.services.kpi_service import (
     compute_delivery_predictability,
+    compute_flow_hygiene,
     compute_kpi_average,
     compute_rework_rate,
 )
@@ -48,10 +55,13 @@ async def get_dashboard(
     team_ids, results = await fetch_all_reports(request, start_date, end_date)
     kpi_config = load_kpi_config()
 
+    azure_client = get_azure_client(request)
+
     team_entries: list[TeamKPIEntry] = []
     team_errors: list[TeamError] = []
     all_rework_kpis = []
     all_dp_kpis = []
+    all_fh_kpis = []
 
     for tid, result in zip(team_ids, results):
         if isinstance(result, Exception):
@@ -71,6 +81,18 @@ async def get_dashboard(
             )
             kpis.append(dp)
             all_dp_kpis.append(dp)
+        if kpi_config.flow_hygiene.enabled:
+            tc = get_team_config(tid)
+            if tc is not None:
+                wip_limits = await resolve_wip_limits(
+                    azure_client, tc, kpi_config.flow_hygiene,
+                )
+                fh = compute_flow_hygiene(
+                    report.deliverables, kpi_config.flow_hygiene,
+                    wip_limits, start_date, end_date,
+                )
+                kpis.append(fh)
+                all_fh_kpis.append(fh)
         team_entries.append(TeamKPIEntry(team_id=report.team_id, kpis=kpis))
 
     averages: list[AverageKPI] = []
@@ -83,6 +105,12 @@ async def get_dashboard(
             compute_kpi_average(
                 "delivery_predictability", all_dp_kpis,
                 kpi_config.delivery_predictability,
+            )
+        )
+    if kpi_config.flow_hygiene.enabled and all_fh_kpis:
+        averages.append(
+            compute_kpi_average(
+                "flow_hygiene", all_fh_kpis, kpi_config.flow_hygiene,
             )
         )
 

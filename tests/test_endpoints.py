@@ -140,6 +140,13 @@ class TestTeamKPIDetail:
         })
         assert r.status_code == 503
 
+    def test_no_azure_client_fh(self, client):
+        r = client.get("/teams/game-services/kpis/flow-hygiene", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
 
 # ---------------------------------------------------------------------------
 # Endpoint 4: GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}
@@ -181,6 +188,15 @@ class TestDrilldown:
         })
         assert r.status_code == 422
 
+    def test_wrong_metric_for_fh(self, client):
+        """items_committed is not a flow hygiene metric."""
+        r = client.get("/teams/game-services/kpis/flow-hygiene/drilldown/items_committed", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 422
+        assert "Invalid metric" in r.json()["detail"]
+
     def test_no_azure_client(self, client):
         r = client.get("/teams/game-services/kpis/rework-rate/drilldown/items_reached_qa", params={
             "start_date": "2025-01-01",
@@ -191,6 +207,14 @@ class TestDrilldown:
     def test_valid_dp_metric(self, client):
         """items_deployed is a valid DP metric, should get 503 (no Azure), not 422."""
         r = client.get("/teams/game-services/kpis/delivery-predictability/drilldown/items_deployed", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_valid_fh_metric(self, client):
+        """items_in_queue is a valid FH metric, should get 503 (no Azure), not 422."""
+        r = client.get("/teams/game-services/kpis/flow-hygiene/drilldown/items_in_queue", params={
             "start_date": "2025-01-01",
             "end_date": "2025-01-31",
         })

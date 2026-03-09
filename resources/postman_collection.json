@@ -7,8 +7,8 @@
   "variable": [
     {"key": "base_url", "value": "http://localhost:8000"},
     {"key": "team_id", "value": "game-services"},
-    {"key": "start_date", "value": "2025-01-01"},
-    {"key": "end_date", "value": "2025-01-31"}
+    {"key": "start_date", "value": "2026-03-09"},
+    {"key": "end_date", "value": "2026-03-09"}
   ],
   "item": [
     {
@@ -90,6 +90,23 @@
           ]
         },
         "description": "Delivery Predictability detail with breakdown metrics for one team."
+      }
+    },
+    {
+      "name": "Team KPI Detail - Flow Hygiene",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/flow-hygiene?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "flow-hygiene"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Flow Hygiene detail with per-state breakdown, WIP limits, and queue load for one team."
       }
     },
     {
@@ -242,6 +259,25 @@
           ]
         },
         "description": "Items that were already active before the period (spillovers)."
+      }
+    },
+    {
+      "name": "Drilldown - Flow Hygiene / items_in_queue",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/flow-hygiene/drilldown/items_in_queue?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "flow-hygiene", "drilldown", "items_in_queue"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "skip", "value": "0", "description": "Pagination offset"},
+            {"key": "limit", "value": "100", "description": "Max items (1-500)"}
+          ]
+        },
+        "description": "Deliverables that spent time in any configured queue state during the period."
       }
     },
     {

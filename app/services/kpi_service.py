@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from app.config.kpi_loader import DeliveryPredictabilityConfig, ReworkRateConfig
+from app.config.kpi_loader import (
+    DeliveryPredictabilityConfig,
+    FlowHygieneConfig,
+    ReworkRateConfig,
+)
 from app.schemas.kpi import (
     AverageKPI,
     DeliveryPredictabilityKPI,
+    FlowHygieneKPI,
     RAGStatus,
     ReworkRateKPI,
+    StateQueueMetric,
 )
 from app.schemas.report import DeliverableRow
 
@@ -38,6 +44,14 @@ def _rag_higher_is_better(value: float, config: DeliveryPredictabilityConfig) ->
     if value >= config.rag.green_min:
         return RAGStatus.GREEN
     if value >= config.rag.amber_min:
+        return RAGStatus.AMBER
+    return RAGStatus.RED
+
+
+def _rag_flow_hygiene(value: float, config: FlowHygieneConfig) -> RAGStatus:
+    if value <= config.rag.green_max:
+        return RAGStatus.GREEN
+    if value <= config.rag.amber_max:
         return RAGStatus.AMBER
     return RAGStatus.RED
 
@@ -144,13 +158,113 @@ def compute_delivery_predictability(
 
 
 # ---------------------------------------------------------------------------
+# Flow Hygiene
+# ---------------------------------------------------------------------------
+
+def _state_on_day(
+    d: DeliverableRow,
+    target_day: date,
+) -> str | None:
+    """Return the Azure DevOps state the item was in at end-of-day *target_day*.
+
+    Uses the status_timeline (sorted by date ascending).  We find the latest
+    entry whose date is on or before target_day.
+    """
+    result: str | None = None
+    for entry in d.status_timeline:
+        entry_date = entry.date.date() if isinstance(entry.date, datetime) else entry.date
+        if entry_date <= target_day:
+            result = entry.state
+        else:
+            break
+    return result
+
+
+def compute_flow_hygiene(
+    deliverables: list[DeliverableRow],
+    config: FlowHygieneConfig,
+    wip_limits: dict[str, tuple[int, str]],
+    start: date,
+    end: date,
+) -> FlowHygieneKPI:
+    """Compute Flow Hygiene KPI with daily snapshots per queue state."""
+    total_days = (end - start).days + 1
+    if total_days <= 0:
+        total_days = 1
+    days = [start + timedelta(days=i) for i in range(total_days)]
+    queue_states_set = frozenset(config.queue_states)
+
+    state_metrics: list[StateQueueMetric] = []
+
+    for q_state in config.queue_states:
+        limit, source = wip_limits.get(q_state, (1, "global_default"))
+        if limit <= 0:
+            limit = 1
+            source = "global_default"
+
+        daily_counts: list[int] = []
+        for day in days:
+            count = 0
+            for d in deliverables:
+                item_state = _state_on_day(d, day)
+                if item_state == q_state:
+                    count += 1
+            daily_counts.append(count)
+
+        avg_items = sum(daily_counts) / len(daily_counts)
+        peak_items = max(daily_counts) if daily_counts else 0
+        days_over = sum(1 for c in daily_counts if c > limit)
+        queue_load = avg_items / limit
+
+        state_metrics.append(StateQueueMetric(
+            state=q_state,
+            avg_items=round(avg_items, 2),
+            peak_items=peak_items,
+            wip_limit=limit,
+            wip_limit_source=source,
+            queue_load=round(queue_load, 4),
+            days_over_limit=days_over,
+        ))
+
+    worst_load = max((s.queue_load for s in state_metrics), default=0.0)
+
+    if worst_load <= config.rag.green_max:
+        rag = RAGStatus.GREEN
+    elif worst_load <= config.rag.amber_max:
+        rag = RAGStatus.AMBER
+    else:
+        rag = RAGStatus.RED
+
+    green_str = f"{config.rag.green_max:.1f}"
+    amber_str = f"{config.rag.amber_max:.1f}"
+
+    return FlowHygieneKPI(
+        value=round(worst_load, 4),
+        display=f"{worst_load:.2f}",
+        rag=rag,
+        total_days=total_days,
+        states=state_metrics,
+        thresholds={
+            "green": f"<= {green_str}",
+            "amber": f"{green_str}-{amber_str}",
+            "red": f"> {amber_str}",
+        },
+    )
+
+
+def _was_in_queue_states(d: DeliverableRow, queue_states: frozenset[str]) -> bool:
+    """True if the item was in any of the queue states at any point."""
+    return any(e.state in queue_states for e in d.status_timeline)
+
+
+# ---------------------------------------------------------------------------
 # Cross-team average
 # ---------------------------------------------------------------------------
 
 def compute_kpi_average(
     kpi_name: str,
-    team_kpis: list[ReworkRateKPI] | list[DeliveryPredictabilityKPI],
-    config: ReworkRateConfig | DeliveryPredictabilityConfig,
+    team_kpis: list[ReworkRateKPI] | list[DeliveryPredictabilityKPI] | list[FlowHygieneKPI],
+    config: ReworkRateConfig | DeliveryPredictabilityConfig | FlowHygieneConfig,
 ) -> AverageKPI:
     if not team_kpis:
         return AverageKPI(
@@ -164,13 +278,16 @@ def compute_kpi_average(
 
     if isinstance(config, DeliveryPredictabilityConfig):
         rag = _rag_higher_is_better(avg, config)
+    elif isinstance(config, FlowHygieneConfig):
+        rag = _rag_flow_hygiene(avg, config)
     else:
         rag = _rag_lower_is_better(avg, config)
 
+    display = f"{avg:.2f}" if isinstance(config, FlowHygieneConfig) else f"{avg * 100:.1f}%"
     return AverageKPI(
         name=kpi_name,
         value=round(avg, 4),
-        display=f"{avg * 100:.1f}%",
+        display=display,
         rag=rag,
         team_count=len(team_kpis),
     )
@@ -180,17 +297,6 @@ def compute_kpi_average(
 # Drilldown filtering
 # ---------------------------------------------------------------------------
 
-VALID_DRILLDOWN_METRICS = frozenset({
-    "items_reached_qa",
-    "items_with_rework",
-    "items_bounced_back",
-    "items_with_bugs",
-    "items_committed",
-    "items_deployed",
-    "items_started_in_period",
-    "items_spillover",
-})
-
 _REWORK_METRICS = frozenset({
     "items_reached_qa", "items_with_rework", "items_bounced_back", "items_with_bugs",
 })
@@ -199,12 +305,19 @@ _DP_METRICS = frozenset({
     "items_committed", "items_deployed", "items_started_in_period", "items_spillover",
 })
 
+_FH_METRICS = frozenset({
+    "items_in_queue",
+})
+
+VALID_DRILLDOWN_METRICS = _REWORK_METRICS | _DP_METRICS | _FH_METRICS
+
 
 def filter_deliverables_by_metric(
     deliverables: list[DeliverableRow],
     metric: str,
     rework_config: ReworkRateConfig | None = None,
     dp_config: DeliveryPredictabilityConfig | None = None,
+    fh_config: FlowHygieneConfig | None = None,
     start: date | None = None,
     end: date | None = None,
 ) -> list[DeliverableRow]:
@@ -245,5 +358,12 @@ def filter_deliverables_by_metric(
             return [d for d in committed if not d.is_spillover]
         if metric == "items_spillover":
             return [d for d in committed if d.is_spillover]
+
+    if metric in _FH_METRICS:
+        if fh_config is None:
+            raise ValueError("fh_config required for flow hygiene metrics")
+        queue_states = frozenset(fh_config.queue_states)
+        if metric == "items_in_queue":
+            return [d for d in deliverables if _was_in_queue_states(d, queue_states)]
 
     return []

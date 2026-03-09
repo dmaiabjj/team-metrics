@@ -8,14 +8,17 @@ import pytest
 
 from app.config.kpi_loader import (
     DeliveryPredictabilityConfig,
+    FlowHygieneConfig,
+    FlowHygieneRAGThresholds,
     RAGThresholds,
     RAGThresholdsHigherIsBetter,
     ReworkRateConfig,
 )
-from app.schemas.kpi import DeliveryPredictabilityKPI, RAGStatus, ReworkRateKPI
+from app.schemas.kpi import DeliveryPredictabilityKPI, FlowHygieneKPI, RAGStatus, ReworkRateKPI
 from app.schemas.report import DeliverableRow, StatusTimelineEntry, WorkItemRef
 from app.services.kpi_service import (
     compute_delivery_predictability,
+    compute_flow_hygiene,
     compute_kpi_average,
     compute_rework_rate,
     filter_deliverables_by_metric,
@@ -436,3 +439,170 @@ class TestFilterDeliverablesByMetric:
         )
         assert len(result) == 2
         assert {d.id for d in result} == {2, 3}
+
+    def test_fh_items_in_queue(self):
+        fh_config = _DEFAULT_FH_CONFIG
+        items = [
+            _make_fh_deliverable(1, [("2025-01-01", "Active"), ("2025-01-05", "Ready for QA")]),
+            _make_fh_deliverable(2, [("2025-01-01", "Active"), ("2025-01-10", "In QA")]),
+            _make_fh_deliverable(3, [("2025-01-01", "New")]),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "items_in_queue", fh_config=fh_config,
+        )
+        assert len(result) == 1
+        assert result[0].id == 1
+
+
+# ---------------------------------------------------------------------------
+# Flow Hygiene defaults
+# ---------------------------------------------------------------------------
+
+_DEFAULT_FH_CONFIG = FlowHygieneConfig(
+    enabled=True,
+    description="test",
+    formula="test",
+    queue_states=["Ready for QA"],
+    default_wip_limits={"Ready for QA": 3},
+    rag=FlowHygieneRAGThresholds(green_max=1.0, amber_max=1.2),
+)
+
+
+def _make_fh_deliverable(
+    wid: int,
+    state_transitions: list[tuple[str, str]],
+) -> DeliverableRow:
+    """Create a deliverable with specific state transitions for flow hygiene tests.
+
+    state_transitions: list of (date_str "YYYY-MM-DD", state_name).
+    """
+    timeline = [
+        StatusTimelineEntry(
+            date=datetime.fromisoformat(dt + "T00:00:00+00:00"),
+            state=state,
+            canonical_status=None,
+        )
+        for dt, state in state_transitions
+    ]
+    return DeliverableRow(
+        id=wid,
+        work_item_type="User Story",
+        title=f"Item {wid}",
+        state=state_transitions[-1][1] if state_transitions else "New",
+        status_timeline=timeline,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Flow Hygiene computation
+# ---------------------------------------------------------------------------
+
+class TestComputeFlowHygiene:
+    def test_empty_deliverables(self):
+        result = compute_flow_hygiene(
+            [], _DEFAULT_FH_CONFIG,
+            {"Ready for QA": (3, "global_default")},
+            date(2025, 1, 1), date(2025, 1, 3),
+        )
+        assert result.name == "flow_hygiene"
+        assert result.value == 0.0
+        assert result.rag == RAGStatus.GREEN
+        assert result.total_days == 3
+        assert len(result.states) == 1
+        assert result.states[0].avg_items == 0.0
+
+    def test_items_in_queue_full_period(self):
+        """Two items in 'Ready for QA' for all 3 days, limit=3."""
+        items = [
+            _make_fh_deliverable(1, [("2024-12-30", "Ready for QA")]),
+            _make_fh_deliverable(2, [("2024-12-31", "Ready for QA")]),
+        ]
+        result = compute_flow_hygiene(
+            items, _DEFAULT_FH_CONFIG,
+            {"Ready for QA": (3, "team_config")},
+            date(2025, 1, 1), date(2025, 1, 3),
+        )
+        assert result.total_days == 3
+        s = result.states[0]
+        assert s.state == "Ready for QA"
+        assert s.avg_items == 2.0
+        assert s.peak_items == 2
+        assert s.wip_limit == 3
+        assert s.wip_limit_source == "team_config"
+        assert round(s.queue_load, 4) == round(2.0 / 3, 4)
+        assert s.days_over_limit == 0
+        assert result.rag == RAGStatus.GREEN
+
+    def test_over_limit_causes_amber(self):
+        """3 items in queue, limit=2 -> load = 1.5 > 1.2 -> RED."""
+        cfg = FlowHygieneConfig(
+            enabled=True,
+            queue_states=["Ready for QA"],
+            default_wip_limits={"Ready for QA": 2},
+            rag=FlowHygieneRAGThresholds(green_max=1.0, amber_max=1.2),
+        )
+        items = [
+            _make_fh_deliverable(i, [("2024-12-30", "Ready for QA")])
+            for i in range(1, 4)
+        ]
+        result = compute_flow_hygiene(
+            items, cfg,
+            {"Ready for QA": (2, "azure_devops")},
+            date(2025, 1, 1), date(2025, 1, 1),
+        )
+        assert result.value == 1.5
+        assert result.rag == RAGStatus.RED
+        assert result.states[0].days_over_limit == 1
+
+    def test_amber_range(self):
+        """Load of exactly 1.1 -> AMBER."""
+        items = [
+            _make_fh_deliverable(1, [("2024-12-30", "Ready for QA")]),
+        ]
+        result = compute_flow_hygiene(
+            items, _DEFAULT_FH_CONFIG,
+            {"Ready for QA": (1, "global_default")},
+            date(2025, 1, 1), date(2025, 1, 1),
+        )
+        assert result.value == 1.0
+        assert result.rag == RAGStatus.GREEN
+
+    def test_items_transition_mid_period(self):
+        """Item enters queue on day 2 of a 3-day period -> avg = 2/3."""
+        items = [
+            _make_fh_deliverable(1, [("2025-01-01", "Active"), ("2025-01-02", "Ready for QA")]),
+        ]
+        result = compute_flow_hygiene(
+            items, _DEFAULT_FH_CONFIG,
+            {"Ready for QA": (3, "global_default")},
+            date(2025, 1, 1), date(2025, 1, 3),
+        )
+        s = result.states[0]
+        assert round(s.avg_items, 2) == round(2 / 3, 2)
+        assert s.peak_items == 1
+
+    def test_worst_state_wins(self):
+        """With two queue states, overall value = max queue_load."""
+        cfg = FlowHygieneConfig(
+            enabled=True,
+            queue_states=["Ready for QA", "Code Review"],
+            default_wip_limits={"Ready for QA": 3, "Code Review": 2},
+            rag=FlowHygieneRAGThresholds(green_max=1.0, amber_max=1.2),
+        )
+        items = [
+            _make_fh_deliverable(1, [("2024-12-30", "Ready for QA")]),
+            _make_fh_deliverable(2, [("2024-12-30", "Code Review")]),
+            _make_fh_deliverable(3, [("2024-12-30", "Code Review")]),
+            _make_fh_deliverable(4, [("2024-12-30", "Code Review")]),
+        ]
+        result = compute_flow_hygiene(
+            items, cfg,
+            {"Ready for QA": (3, "global_default"), "Code Review": (2, "global_default")},
+            date(2025, 1, 1), date(2025, 1, 1),
+        )
+        rfq_state = next(s for s in result.states if s.state == "Ready for QA")
+        cr_state = next(s for s in result.states if s.state == "Code Review")
+        assert round(rfq_state.queue_load, 4) == round(1 / 3, 4)
+        assert cr_state.queue_load == 1.5
+        assert result.value == 1.5
+        assert result.rag == RAGStatus.RED

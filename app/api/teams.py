@@ -10,9 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.api.helpers import get_team_report
+from app.api.helpers import get_azure_client, get_team_report, resolve_wip_limits
 from app.auth import require_api_key
 from app.config.kpi_loader import load_kpi_config
+from app.config.team_loader import get_team_config
 from app.schemas.kpi import (
     DrilldownResponse,
     TeamKPIDetailResponse,
@@ -21,6 +22,7 @@ from app.schemas.kpi import (
 from app.schemas.report import ErrorResponse, WorkItemsResponse
 from app.services.kpi_service import (
     compute_delivery_predictability,
+    compute_flow_hygiene,
     compute_rework_rate,
     filter_deliverables_by_metric,
 )
@@ -41,6 +43,7 @@ router = APIRouter(dependencies=[Depends(require_api_key)])
 class KPIName(str, Enum):
     REWORK_RATE = "rework-rate"
     DELIVERY_PREDICTABILITY = "delivery-predictability"
+    FLOW_HYGIENE = "flow-hygiene"
 
 
 REWORK_METRICS = frozenset({
@@ -49,18 +52,35 @@ REWORK_METRICS = frozenset({
 DP_METRICS = frozenset({
     "items_committed", "items_deployed", "items_started_in_period", "items_spillover",
 })
+FH_METRICS = frozenset({
+    "items_in_queue",
+})
 KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.REWORK_RATE: REWORK_METRICS,
     KPIName.DELIVERY_PREDICTABILITY: DP_METRICS,
+    KPIName.FLOW_HYGIENE: FH_METRICS,
 }
 
 
-def _compute_single_kpi(kpi_name: KPIName, deliverables, kpi_config, start_date, end_date):
+async def _compute_single_kpi(
+    kpi_name: KPIName, deliverables, kpi_config, start_date, end_date,
+    *, request: Request | None = None, team_id: str | None = None,
+):
     """Compute a single KPI by name."""
     if kpi_name == KPIName.REWORK_RATE:
         return compute_rework_rate(deliverables, kpi_config.rework_rate)
-    return compute_delivery_predictability(
-        deliverables, kpi_config.delivery_predictability, start_date, end_date,
+    if kpi_name == KPIName.DELIVERY_PREDICTABILITY:
+        return compute_delivery_predictability(
+            deliverables, kpi_config.delivery_predictability, start_date, end_date,
+        )
+    # FLOW_HYGIENE
+    azure_client = get_azure_client(request) if request else None
+    tc = get_team_config(team_id) if team_id else None
+    if tc is None:
+        raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
+    wip_limits = await resolve_wip_limits(azure_client, tc, kpi_config.flow_hygiene)
+    return compute_flow_hygiene(
+        deliverables, kpi_config.flow_hygiene, wip_limits, start_date, end_date,
     )
 
 
@@ -120,6 +140,11 @@ async def get_team_kpis(
         kpis.append(compute_delivery_predictability(
             report.deliverables, kpi_config.delivery_predictability, start_date, end_date,
         ))
+    if kpi_config.flow_hygiene.enabled:
+        kpis.append(await _compute_single_kpi(
+            KPIName.FLOW_HYGIENE, report.deliverables, kpi_config, start_date, end_date,
+            request=request, team_id=team_id,
+        ))
     return TeamKPIsResponse(
         team_id=team_id, start_date=start_date, end_date=end_date, kpis=kpis,
     )
@@ -145,7 +170,10 @@ async def get_team_kpi_detail(
     """Return a single KPI with its metrics and all involved work items."""
     report = await get_team_report(request, team_id, start_date, end_date)
     kpi_config = load_kpi_config()
-    kpi = _compute_single_kpi(kpi_name, report.deliverables, kpi_config, start_date, end_date)
+    kpi = await _compute_single_kpi(
+        kpi_name, report.deliverables, kpi_config, start_date, end_date,
+        request=request, team_id=team_id,
+    )
 
     seen_ids: set[int] = set()
     items: list = []
@@ -155,6 +183,7 @@ async def get_team_kpi_detail(
             metric,
             rework_config=kpi_config.rework_rate,
             dp_config=kpi_config.delivery_predictability,
+            fh_config=kpi_config.flow_hygiene,
             start=start_date,
             end=end_date,
         ):
@@ -204,6 +233,7 @@ async def get_kpi_drilldown(
         metric,
         rework_config=kpi_config.rework_rate,
         dp_config=kpi_config.delivery_predictability,
+        fh_config=kpi_config.flow_hygiene,
         start=start_date,
         end=end_date,
     )

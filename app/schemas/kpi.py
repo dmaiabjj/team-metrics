@@ -53,17 +53,48 @@ class DeliveryPredictabilityKPI(BaseModel):
     )
 
 
+class StateQueueMetric(BaseModel):
+    state: str
+    avg_items: float = Field(description="Average daily count of items in this state")
+    peak_items: int = Field(description="Maximum daily count observed")
+    wip_limit: int = Field(description="WIP limit applied to this state")
+    wip_limit_source: str = Field(description="Where the limit came from: azure_devops | team_config | global_default")
+    queue_load: float = Field(description="avg_items / wip_limit")
+    days_over_limit: int = Field(description="Number of days where count exceeded wip_limit")
+
+
+class FlowHygieneKPI(BaseModel):
+    name: str = "flow_hygiene"
+    value: float = Field(description="Worst queue_load across all monitored states")
+    display: str = Field(description="Human-readable ratio (e.g. '1.33')")
+    rag: RAGStatus
+    total_days: int
+    states: list[StateQueueMetric] = Field(default_factory=list)
+    thresholds: dict[str, str] = Field(
+        default_factory=lambda: {
+            "green": "<= 1.0",
+            "amber": "1.0-1.2",
+            "red": "> 1.2",
+        }
+    )
+
+
+_KPI_TAG_MAP = {
+    "delivery_predictability": "delivery_predictability",
+    "flow_hygiene": "flow_hygiene",
+}
+
+
 def _kpi_discriminator(v: dict | BaseModel) -> str:
     name = v.get("name") if isinstance(v, dict) else getattr(v, "name", None)
-    if name == "delivery_predictability":
-        return "delivery_predictability"
-    return "rework_rate"
+    return _KPI_TAG_MAP.get(name, "rework_rate")
 
 
 KPIResult = Annotated[
     Union[
         Annotated[ReworkRateKPI, Tag("rework_rate")],
         Annotated[DeliveryPredictabilityKPI, Tag("delivery_predictability")],
+        Annotated[FlowHygieneKPI, Tag("flow_hygiene")],
     ],
     Discriminator(_kpi_discriminator),
 ]

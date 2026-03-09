@@ -20,6 +20,9 @@ class TeamConfig(BaseModel):
     tech_debt_epic_ids: list[int] = Field(default_factory=list)
     post_mortem_epic_ids: list[int] = Field(default_factory=list)
     post_mortem_sla_weeks: int | None = None
+    board_name: str = "Stories"
+    azure_team: str | None = None
+    wip_limits: dict[str, int] | None = Field(default=None)
 
     def normalize(self) -> "TeamConfig":
         def norm(s: str) -> str:
@@ -44,6 +47,9 @@ class TeamConfig(BaseModel):
             tech_debt_epic_ids=self.tech_debt_epic_ids,
             post_mortem_epic_ids=self.post_mortem_epic_ids,
             post_mortem_sla_weeks=self.post_mortem_sla_weeks,
+            board_name=norm(self.board_name) or "Stories",
+            azure_team=norm(self.azure_team) if self.azure_team else None,
+            wip_limits={norm(k): v for k, v in (self.wip_limits or {}).items() if norm(k)},
         )
 
     def real_state_to_canonical(self) -> dict[str, str]:
