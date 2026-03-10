@@ -1,0 +1,17 @@
+dora:
+  deploy_frequency:
+    enabled: true
+    description: "Deployments to production per day"
+    formula: "deployment_count / period_days"
+    rag:
+      green_min: 1.0
+      amber_min: 0.25
+
+  lead_time:
+    enabled: true
+    description: "Average time from work started to delivered"
+    formula: "avg(finish_date - start_date)"
+    delivered_canonical_status: "Delivered"
+    rag:
+      green_max: 7.0
+      amber_max: 14.0

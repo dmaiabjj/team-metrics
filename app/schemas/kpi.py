@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 from datetime import date
-from enum import Enum
 from typing import Annotated, Union
 
 from pydantic import BaseModel, Discriminator, Field, Tag
 
+from app.schemas.common import RAGStatus
+from app.schemas.dora import DeployFrequencyKPI, DeploymentSummary, LeadTimeKPI
 from app.schemas.report import DeliverableRow
-
-
-class RAGStatus(str, Enum):
-    GREEN = "green"
-    AMBER = "amber"
-    RED = "red"
+from app.schemas.snapshot import DeliverySnapshot
 
 
 class ReworkRateKPI(BaseModel):
@@ -127,10 +123,29 @@ class WIPDisciplineKPI(BaseModel):
     )
 
 
+class TechDebtRatioKPI(BaseModel):
+    name: str = "tech_debt_ratio"
+    value: float = Field(description="Tech debt ratio as a decimal (e.g. 0.20 for 20%)")
+    display: str = Field(description="Human-readable percentage (e.g. '20.0%')")
+    rag: RAGStatus
+    tech_debt_count: int = Field(description="Number of delivered items flagged as tech debt")
+    total_deployed: int = Field(description="Total delivered items in the period")
+    thresholds: dict[str, str] = Field(
+        default_factory=lambda: {
+            "green": "20-30%",
+            "amber": "10-20%",
+            "red": "< 10% or > 30%",
+        }
+    )
+
+
 _KPI_TAG_MAP = {
     "delivery_predictability": "delivery_predictability",
     "flow_hygiene": "flow_hygiene",
     "wip_discipline": "wip_discipline",
+    "tech_debt_ratio": "tech_debt_ratio",
+    "deploy_frequency": "deploy_frequency",
+    "lead_time": "lead_time",
 }
 
 
@@ -145,6 +160,9 @@ KPIResult = Annotated[
         Annotated[DeliveryPredictabilityKPI, Tag("delivery_predictability")],
         Annotated[FlowHygieneKPI, Tag("flow_hygiene")],
         Annotated[WIPDisciplineKPI, Tag("wip_discipline")],
+        Annotated[TechDebtRatioKPI, Tag("tech_debt_ratio")],
+        Annotated[DeployFrequencyKPI, Tag("deploy_frequency")],
+        Annotated[LeadTimeKPI, Tag("lead_time")],
     ],
     Discriminator(_kpi_discriminator),
 ]
@@ -158,7 +176,24 @@ class TeamKPIsResponse(BaseModel):
     team_id: str
     start_date: date
     end_date: date
+    delivery_snapshot: DeliverySnapshot
     kpis: list[KPIResult] = Field(default_factory=list)
+    dora: list[DeployFrequencyKPI | LeadTimeKPI] = Field(
+        default_factory=list,
+        description="DORA metrics (deploy_frequency, lead_time) separate from KPIs",
+    )
+
+
+class TeamDoraResponse(BaseModel):
+    """Response for GET /teams/{team_id}/dora - DORA metrics only."""
+
+    team_id: str
+    start_date: date
+    end_date: date
+    dora: list[DeployFrequencyKPI | LeadTimeKPI] = Field(
+        default_factory=list,
+        description="DORA metrics (deploy_frequency, lead_time)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +207,10 @@ class TeamKPIDetailResponse(BaseModel):
     kpi: KPIResult
     total: int = Field(0, description="Total work items involved in this KPI")
     items: list[DeliverableRow] = Field(default_factory=list)
+    deployments: list[DeploymentSummary] | None = Field(
+        default=None,
+        description="For deploy_frequency; items empty when present",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +225,10 @@ class DrilldownResponse(BaseModel):
     metric: str
     total: int = Field(description="Total matching items before pagination")
     items: list[DeliverableRow] = Field(default_factory=list)
+    deployments: list[DeploymentSummary] | None = Field(
+        default=None,
+        description="For deploy_frequency drilldown; items empty when present",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -207,12 +250,22 @@ class TeamError(BaseModel):
 
 class TeamKPIEntry(BaseModel):
     team_id: str
+    delivery_snapshot: DeliverySnapshot
     kpis: list[KPIResult] = Field(default_factory=list)
+    dora: list[DeployFrequencyKPI | LeadTimeKPI] = Field(
+        default_factory=list,
+        description="DORA metrics (deploy_frequency, lead_time) separate from KPIs",
+    )
 
 
 class DashboardResponse(BaseModel):
     start_date: date
     end_date: date
-    averages: list[AverageKPI] = Field(default_factory=list)
+    delivery_snapshot: DeliverySnapshot
+    kpis: list[AverageKPI] = Field(default_factory=list)
+    dora: list[AverageKPI] = Field(
+        default_factory=list,
+        description="DORA metric averages (deploy_frequency, lead_time) separate from KPIs",
+    )
     teams: list[TeamKPIEntry] = Field(default_factory=list)
     errors: list[TeamError] = Field(default_factory=list, description="Teams that failed")

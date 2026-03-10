@@ -10,6 +10,32 @@ class StateMapping(BaseModel):
     real_states: list[str] = Field(default_factory=list)
 
 
+class DefinitionEnvironmentId(BaseModel):
+    definition_id: int
+    environment_id: int
+
+
+class DeployFrequencyTeamConfig(BaseModel):
+    """Deploy frequency config. Use either definition_environment_ids (integer stage IDs),
+    definition_ids + environment_name (Build API for YAML pipelines), or environment_guid (Environments API).
+    """
+    definition_environment_ids: list[DefinitionEnvironmentId] = Field(default_factory=list)
+    # Environments API: environment GUID (Pipelines → Environments).
+    environment_guid: str | None = Field(default=None, description="Environment GUID for Environments API")
+    environment_project: str | None = Field(
+        default=None,
+        description="Project where the environment lives (for Environments API). If unset, uses team project.",
+    )
+    environment_name: str | None = Field(
+        default=None,
+        description="Stage name to filter (e.g. 'Coreflex PROD') when using definition_ids without definitionEnvironmentId",
+    )
+    definition_ids: list[int] = Field(
+        default_factory=list,
+        description="Pipeline/definition IDs; used with environment_guid or environment_name",
+    )
+
+
 class TeamConfig(BaseModel):
     project: str
     area_paths: list[str] = Field(default_factory=list)
@@ -23,6 +49,7 @@ class TeamConfig(BaseModel):
     board_name: str = "Stories"
     azure_team: str | None = None
     wip_limits: dict[str, int] | None = Field(default=None)
+    deploy_frequency: DeployFrequencyTeamConfig | None = Field(default=None)
 
     def normalize(self) -> "TeamConfig":
         def norm(s: str) -> str:
@@ -50,6 +77,7 @@ class TeamConfig(BaseModel):
             board_name=norm(self.board_name) or "Stories",
             azure_team=norm(self.azure_team) if self.azure_team else None,
             wip_limits={norm(k): v for k, v in (self.wip_limits or {}).items() if norm(k)},
+            deploy_frequency=self.deploy_frequency,
         )
 
     def real_state_to_canonical(self) -> dict[str, str]:

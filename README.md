@@ -126,17 +126,27 @@ GET /dashboard?start_date=2025-01-01&end_date=2025-01-31
 {
   "start_date": "2025-01-01",
   "end_date": "2025-01-31",
-  "averages": [
+  "delivery_snapshot": {"delivered": 200, "committed": 250, "committed_in_period": 220, "spillovers": 30, "rework_items": 15, "tech_debts": 40, "bugs": 25},
+  "kpis": [
     {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
     {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5},
     {"name": "flow_hygiene", "value": 0.67, "display": "0.67", "rag": "green", "team_count": 5}
   ],
+  "dora": [
+    {"name": "deploy_frequency", "value": 1.2, "display": "1.2 deploys/day", "rag": "green", "team_count": 5},
+    {"name": "lead_time", "value": 5.5, "display": "5.5 days", "rag": "green", "team_count": 5}
+  ],
   "teams": [
     {
       "team_id": "game-services",
+      "delivery_snapshot": {"delivered": 45, "committed": 50, "committed_in_period": 42, "spillovers": 8, "rework_items": 5, "tech_debts": 10, "bugs": 8},
       "kpis": [
-        {"name": "rework_rate", "value": 0.10, "display": "10.0%", "rag": "green", "items_with_rework": 5, "items_reached_qa": 50, "items_bounced_back": 3, "total_bugs": 8, "thresholds": {"green": "<= 10%", "amber": "10-15%", "red": "> 15%"}},
-        {"name": "delivery_predictability", "value": 0.90, "display": "90.0%", "rag": "green", "items_committed": 50, "items_deployed": 45, "items_started_in_period": 35, "items_spillover": 15, "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}}
+        {"name": "rework_rate", "value": 0.10, "...": "..."},
+        {"name": "delivery_predictability", "value": 0.90, "...": "..."}
+      ],
+      "dora": [
+        {"name": "deploy_frequency", "value": 1.0, "...": "..."},
+        {"name": "lead_time", "value": 5.2, "...": "..."}
       ]
     }
   ],
@@ -169,9 +179,48 @@ GET /teams/{team_id}/kpis?start_date=2025-01-01&end_date=2025-01-31
   "team_id": "game-services",
   "start_date": "2025-01-01",
   "end_date": "2025-01-31",
+  "delivery_snapshot": {"delivered": 45, "committed": 50, "committed_in_period": 42, "spillovers": 8, "rework_items": 5, "tech_debts": 10, "bugs": 8},
   "kpis": [
     {"name": "rework_rate", "value": 0.10, "display": "10.0%", "rag": "green", "items_with_rework": 5, "items_reached_qa": 50, "items_bounced_back": 3, "total_bugs": 8, "thresholds": {"green": "<= 10%", "amber": "10-15%", "red": "> 15%"}},
     {"name": "delivery_predictability", "value": 0.90, "display": "90.0%", "rag": "green", "items_committed": 50, "items_deployed": 45, "items_started_in_period": 35, "items_spillover": 15, "thresholds": {"green": ">= 85%", "amber": "70%-85%", "red": "< 70%"}}
+  ],
+  "dora": [
+    {"name": "deploy_frequency", "value": 1.0, "display": "1.0 deploys/day", "rag": "green", "deployment_count": 31, "period_days": 31, "thresholds": {...}},
+    {"name": "lead_time", "value": 5.2, "display": "5.2 days", "rag": "green", "lead_time_days": 5.2, "cycle_time_days": 5.2, "sample_size": 42, "thresholds": {...}}
+  ]
+}
+```
+
+---
+
+### 2b. Team DORA
+
+DORA metrics only (deploy frequency, lead time). Use `/dora/` paths instead of `/kpis/` for DORA-specific endpoints.
+
+```
+GET /teams/{team_id}/dora?start_date=2025-01-01&end_date=2025-01-31
+GET /teams/{team_id}/dora/deploy-frequency?start_date=2025-01-01&end_date=2025-01-31
+GET /teams/{team_id}/dora/lead-time?start_date=2025-01-01&end_date=2025-01-31
+GET /teams/{team_id}/dora/deploy-frequency/drilldown/deployments?start_date=...&end_date=...&skip=0&limit=100
+GET /teams/{team_id}/dora/lead-time/drilldown/measured_items?start_date=...&end_date=...&skip=0&limit=100
+```
+
+| Parameter    | Type | Required | Description                      |
+| ------------ | ---- | -------- | -------------------------------- |
+| `team_id`    | path | Yes      | Team slug (e.g. `game-services`) |
+| `start_date` | date | Yes      | Start of period (ISO)            |
+| `end_date`   | date | Yes      | End of period (ISO)              |
+
+**Response** `200 OK` (GET /teams/{team_id}/dora)
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "dora": [
+    {"name": "deploy_frequency", "value": 1.0, "display": "1.0 deploys/day", "rag": "green", "deployment_count": 31, "period_days": 31, "thresholds": {...}},
+    {"name": "lead_time", "value": 5.2, "display": "5.2 days", "rag": "green", "lead_time_days": 5.2, "cycle_time_days": 5.2, "sample_size": 42, "thresholds": {...}}
   ]
 }
 ```
@@ -189,7 +238,7 @@ GET /teams/{team_id}/kpis/{kpi_name}?start_date=2025-01-01&end_date=2025-01-31
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `team_id` | path | Yes | Team slug |
-| `kpi_name` | path | Yes | `rework-rate`, `delivery-predictability`, `flow-hygiene`, or `wip-discipline` |
+| `kpi_name` | path | Yes | `rework-rate`, `delivery-predictability`, `flow-hygiene`, `wip-discipline`, `tech-debt-ratio`, `deploy-frequency`, or `lead-time` |
 | `start_date` | date | Yes | Start of period (ISO) |
 | `end_date` | date | Yes | End of period (ISO) |
 
@@ -235,7 +284,7 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | Parameter    | Type | Required | Description                                |
 | ------------ | ---- | -------- | ------------------------------------------ |
 | `team_id`    | path | Yes      | Team slug                                  |
-| `kpi_name`   | path | Yes      | `rework-rate`, `delivery-predictability`, `flow-hygiene`, or `wip-discipline` |
+| `kpi_name`   | path | Yes      | `rework-rate`, `delivery-predictability`, `flow-hygiene`, `wip-discipline`, or `tech-debt-ratio` |
 | `metric`     | path | Yes      | Metric to drill into (see table below)     |
 | `start_date` | date | Yes      | Start of period (ISO)                      |
 | `end_date`   | date | Yes      | End of period (ISO)                        |
@@ -253,6 +302,7 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | `delivery-predictability` | `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover` |
 | `flow-hygiene`            | `items_in_queue`                                                                  |
 | `wip-discipline`          | `developers`, `qas`, `compliant_gte_80`, `over_wip_limit`                        |
+| `tech-debt-ratio`         | `tech_debt_deployed`, `non_tech_debt_deployed`                                    |
 
 
 **Response** `200 OK`
@@ -273,7 +323,41 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 
 ---
 
-### 5. Work Items
+### 5. Delivery Snapshot Drilldown
+
+Work items behind a delivery snapshot metric. Supports `skip`/`limit` pagination.
+
+```
+GET /teams/{team_id}/delivery-snapshot/{metric}?start_date=2025-01-01&end_date=2025-01-31
+```
+
+| Parameter    | Type | Required | Description                                |
+| ------------ | ---- | -------- | ------------------------------------------ |
+| `team_id`    | path | Yes      | Team slug                                  |
+| `metric`     | path | Yes      | `delivered`, `committed`, `committed_in_period`, `spillovers`, `rework_items`, `tech_debts`, or `bugs` |
+| `start_date` | date | Yes      | Start of period (ISO)                      |
+| `end_date`   | date | Yes      | End of period (ISO)                        |
+| `skip`       | int  | No       | Pagination offset (default 0)              |
+| `limit`      | int  | No       | Max items (default 100, max 500)           |
+
+**Response** `200 OK`
+
+```json
+{
+  "team_id": "game-services",
+  "start_date": "2025-01-01",
+  "end_date": "2025-01-31",
+  "metric": "tech_debts",
+  "total": 10,
+  "items": [
+    {"id": 12345, "work_item_type": "Story", "title": "Refactor auth module", "...": "..."}
+  ]
+}
+```
+
+---
+
+### 6. Work Items
 
 Paginated list of work items (deliverables) for one team. Replaces the former `/report` endpoint.
 
@@ -513,6 +597,12 @@ Endpoints are rate-limited per client IP:
 | `GET /teams/{team_id}/kpis`                               | 30 requests/minute |
 | `GET /teams/{team_id}/kpis/{kpi_name}`                    | 30 requests/minute |
 | `GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}` | 30 requests/minute |
+| `GET /teams/{team_id}/dora`                               | 30 requests/minute |
+| `GET /teams/{team_id}/dora/deploy-frequency`              | 30 requests/minute |
+| `GET /teams/{team_id}/dora/lead-time`                     | 30 requests/minute |
+| `GET /teams/{team_id}/dora/deploy-frequency/drilldown/deployments` | 30 requests/minute |
+| `GET /teams/{team_id}/dora/lead-time/drilldown/measured_items`     | 30 requests/minute |
+| `GET /teams/{team_id}/delivery-snapshot/{metric}`         | 30 requests/minute |
 
 
 Exceeding the limit returns `429 Too Many Requests`.
@@ -647,6 +737,34 @@ A person is **compliant** if they were at or below their WIP limit for >= 80% of
 | Green | >= 80%    |
 | Amber | 60-80%    |
 | Red   | < 60%     |
+
+
+All thresholds are configurable in `app/config/kpis.yaml`.
+
+### Tech Debt Ratio
+
+Measures the proportion of delivered items that are tech debt, based on the `tech_debt_epic_ids` configured per team.
+
+```
+tech_debt_ratio = tech_debt_deployed / total_deployed
+```
+
+Where `total_deployed` = items with `canonical_status == "Delivered"` and `tech_debt_deployed` = subset where `is_technical_debt == true`.
+
+Configure epic IDs in `teams.yaml`:
+
+```yaml
+tech_debt_epic_ids: [1234, 5678]
+```
+
+**Drilldown** supports `tech_debt_deployed` and `non_tech_debt_deployed` metrics.
+
+
+| RAG   | Threshold         |
+| ----- | ----------------- |
+| Green | 20-30%            |
+| Amber | 10-20%            |
+| Red   | < 10% or > 30%    |
 
 
 All thresholds are configurable in `app/config/kpis.yaml`.

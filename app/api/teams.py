@@ -3,30 +3,52 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.api.helpers import get_azure_client, get_team_report, resolve_wip_limits
+from app.api.helpers import (
+    fetch_deploy_frequency_deployments,
+    get_azure_client,
+    get_team_report,
+    resolve_wip_limits,
+)
 from app.auth import require_api_key
+from app.config.dora_loader import load_dora_config
 from app.config.kpi_loader import load_kpi_config
 from app.config.team_loader import get_team_config
 from app.schemas.kpi import (
     DrilldownResponse,
+    TeamDoraResponse,
     TeamKPIDetailResponse,
     TeamKPIsResponse,
     WIPDisciplineKPI,
 )
+from app.services.dora_service import (
+    build_deployments_to_summaries,
+    compute_deploy_frequency,
+    compute_lead_time,
+    deployments_to_summaries,
+    environment_records_to_summaries,
+    filter_dora_metric,
+)
+from app.schemas.snapshot import SnapshotDrilldownResponse
 from app.schemas.report import ErrorResponse, WorkItemsResponse
 from app.services.kpi_service import (
     compute_delivery_predictability,
     compute_flow_hygiene,
     compute_rework_rate,
+    compute_tech_debt_ratio,
     compute_wip_discipline,
     filter_deliverables_by_metric,
+)
+from app.services.snapshot_service import (
+    VALID_SNAPSHOT_METRICS,
+    compute_delivery_snapshot,
+    filter_snapshot_metric,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +69,9 @@ class KPIName(str, Enum):
     DELIVERY_PREDICTABILITY = "delivery-predictability"
     FLOW_HYGIENE = "flow-hygiene"
     WIP_DISCIPLINE = "wip-discipline"
+    TECH_DEBT_RATIO = "tech-debt-ratio"
+    DEPLOY_FREQUENCY = "deploy-frequency"
+    LEAD_TIME = "lead-time"
 
 
 REWORK_METRICS = frozenset({
@@ -61,17 +86,26 @@ FH_METRICS = frozenset({
 WD_METRICS = frozenset({
     "developers", "qas", "compliant_gte_80", "over_wip_limit",
 })
+TD_METRICS = frozenset({
+    "tech_debt_deployed", "non_tech_debt_deployed",
+})
+DF_METRICS = frozenset({"deployments"})
+LT_METRICS = frozenset({"measured_items"})
 KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.REWORK_RATE: REWORK_METRICS,
     KPIName.DELIVERY_PREDICTABILITY: DP_METRICS,
     KPIName.FLOW_HYGIENE: FH_METRICS,
     KPIName.WIP_DISCIPLINE: WD_METRICS,
+    KPIName.TECH_DEBT_RATIO: TD_METRICS,
+    KPIName.DEPLOY_FREQUENCY: DF_METRICS,
+    KPIName.LEAD_TIME: LT_METRICS,
 }
 
 
 async def _compute_single_kpi(
     kpi_name: KPIName, deliverables, kpi_config, start_date, end_date,
     *, request: Request | None = None, team_id: str | None = None,
+    dora_config=None,
 ):
     """Compute a single KPI by name."""
     if kpi_name == KPIName.REWORK_RATE:
@@ -79,6 +113,45 @@ async def _compute_single_kpi(
     if kpi_name == KPIName.DELIVERY_PREDICTABILITY:
         return compute_delivery_predictability(
             deliverables, kpi_config.delivery_predictability, start_date, end_date,
+        )
+    if kpi_name == KPIName.TECH_DEBT_RATIO:
+        return compute_tech_debt_ratio(deliverables, kpi_config.tech_debt_ratio)
+
+    if kpi_name == KPIName.DEPLOY_FREQUENCY:
+        if dora_config is None or not dora_config.deploy_frequency.enabled:
+            raise HTTPException(status_code=404, detail="Deploy frequency not enabled")
+        tc = get_team_config(team_id) if team_id else None
+        if tc is None:
+            raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
+        df_team = tc.deploy_frequency
+        has_config = (
+            df_team
+            and (
+                df_team.definition_environment_ids
+                or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
+            )
+        )
+        if not has_config:
+            return compute_deploy_frequency(
+                [], dora_config.deploy_frequency, start_date, end_date,
+            )
+        azure_client = get_azure_client(request) if request else None
+        if azure_client is None:
+            return compute_deploy_frequency(
+                [], dora_config.deploy_frequency, start_date, end_date,
+            )
+        deployments, _ = await fetch_deploy_frequency_deployments(
+            azure_client, df_team, tc.project, start_date, end_date,
+        )
+        return compute_deploy_frequency(
+            deployments, dora_config.deploy_frequency, start_date, end_date,
+        )
+
+    if kpi_name == KPIName.LEAD_TIME:
+        if dora_config is None or not dora_config.lead_time.enabled:
+            raise HTTPException(status_code=404, detail="Lead time not enabled")
+        return compute_lead_time(
+            deliverables, dora_config.lead_time, start_date, end_date,
         )
 
     tc = get_team_config(team_id) if team_id else None
@@ -166,8 +239,226 @@ async def get_team_kpis(
             request=request, team_id=team_id,
         )
         kpis.append(wd.model_copy(update={"persons": None}))
+    if kpi_config.tech_debt_ratio.enabled:
+        kpis.append(compute_tech_debt_ratio(
+            report.deliverables, kpi_config.tech_debt_ratio,
+        ))
+    dora: list = []
+    dora_config = load_dora_config()
+    if dora_config.deploy_frequency.enabled:
+        df_kpi = await _compute_single_kpi(
+            KPIName.DEPLOY_FREQUENCY, report.deliverables, kpi_config,
+            start_date, end_date,
+            request=request, team_id=team_id, dora_config=dora_config,
+        )
+        dora.append(df_kpi)
+    if dora_config.lead_time.enabled:
+        dora.append(compute_lead_time(
+            report.deliverables, dora_config.lead_time, start_date, end_date,
+        ))
+    snapshot = compute_delivery_snapshot(
+        report.deliverables, kpi_config, start_date, end_date,
+    )
     return TeamKPIsResponse(
-        team_id=team_id, start_date=start_date, end_date=end_date, kpis=kpis,
+        team_id=team_id, start_date=start_date, end_date=end_date,
+        delivery_snapshot=snapshot, kpis=kpis, dora=dora,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DORA endpoints: GET /teams/{team_id}/dora/...
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{team_id}/dora",
+    response_model=TeamDoraResponse,
+    responses=_ERROR_RESPONSES,
+)
+@limiter.limit("30/minute")
+async def get_team_dora(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+) -> TeamDoraResponse:
+    """Return DORA metrics only for one team."""
+    report = await get_team_report(request, team_id, start_date, end_date)
+    dora_config = load_dora_config()
+    dora: list = []
+    if dora_config.deploy_frequency.enabled:
+        df_kpi = await _compute_single_kpi(
+            KPIName.DEPLOY_FREQUENCY, report.deliverables, load_kpi_config(),
+            start_date, end_date,
+            request=request, team_id=team_id, dora_config=dora_config,
+        )
+        dora.append(df_kpi)
+    if dora_config.lead_time.enabled:
+        dora.append(compute_lead_time(
+            report.deliverables, dora_config.lead_time, start_date, end_date,
+        ))
+    return TeamDoraResponse(
+        team_id=team_id, start_date=start_date, end_date=end_date, dora=dora,
+    )
+
+
+@router.get(
+    "/{team_id}/dora/deploy-frequency/drilldown/deployments",
+    response_model=DrilldownResponse,
+    responses=_ERROR_RESPONSES,
+)
+@limiter.limit("30/minute")
+async def get_dora_deploy_frequency_drilldown(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Max items to return"),
+) -> DrilldownResponse:
+    """Drilldown into deploy frequency deployments."""
+    tc = get_team_config(team_id)
+    df_team = tc.deploy_frequency if tc else None
+    has_df_config = df_team and (
+        df_team.definition_environment_ids
+        or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
+    )
+    deployments: list = []
+    if tc and has_df_config:
+        azure_client = get_azure_client(request)
+        raw, fmt = await fetch_deploy_frequency_deployments(
+            azure_client, df_team, tc.project, start_date, end_date,
+        )
+        deployments = (
+            deployments_to_summaries(raw) if fmt == "release"
+            else build_deployments_to_summaries(raw) if fmt == "build"
+            else environment_records_to_summaries(raw)
+        )
+    total = len(deployments)
+    return DrilldownResponse(
+        team_id=team_id,
+        start_date=start_date,
+        end_date=end_date,
+        kpi_name="deploy-frequency",
+        metric="deployments",
+        total=total,
+        items=[],
+        deployments=deployments[skip : skip + limit],
+    )
+
+
+@router.get(
+    "/{team_id}/dora/lead-time/drilldown/measured_items",
+    response_model=DrilldownResponse,
+    responses=_ERROR_RESPONSES,
+)
+@limiter.limit("30/minute")
+async def get_dora_lead_time_drilldown(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Max items to return"),
+) -> DrilldownResponse:
+    """Drilldown into lead time measured items."""
+    report = await get_team_report(request, team_id, start_date, end_date)
+    dora_config = load_dora_config()
+    filtered = filter_dora_metric(
+        report.deliverables, "measured_items",
+        dora_config.lead_time, start_date, end_date,
+    )
+    total = len(filtered)
+    return DrilldownResponse(
+        team_id=team_id,
+        start_date=start_date,
+        end_date=end_date,
+        kpi_name="lead-time",
+        metric="measured_items",
+        total=total,
+        items=filtered[skip : skip + limit],
+    )
+
+
+@router.get(
+    "/{team_id}/dora/deploy-frequency",
+    response_model=TeamKPIDetailResponse,
+    responses=_ERROR_RESPONSES,
+)
+@limiter.limit("30/minute")
+async def get_dora_deploy_frequency(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+) -> TeamKPIDetailResponse:
+    """Deploy frequency (DORA) detail."""
+    report = await get_team_report(request, team_id, start_date, end_date)
+    dora_config = load_dora_config()
+    kpi = await _compute_single_kpi(
+        KPIName.DEPLOY_FREQUENCY, report.deliverables, load_kpi_config(),
+        start_date, end_date,
+        request=request, team_id=team_id, dora_config=dora_config,
+    )
+    tc = get_team_config(team_id)
+    df_team = tc.deploy_frequency if tc else None
+    has_df_config = df_team and (
+        df_team.definition_environment_ids
+        or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
+    )
+    deployments: list | None = None
+    if tc and has_df_config:
+        azure_client = get_azure_client(request)
+        raw, fmt = await fetch_deploy_frequency_deployments(
+            azure_client, df_team, tc.project, start_date, end_date,
+        )
+        deployments = (
+            deployments_to_summaries(raw) if fmt == "release"
+            else build_deployments_to_summaries(raw) if fmt == "build"
+            else environment_records_to_summaries(raw)
+        )
+    else:
+        deployments = []
+    return TeamKPIDetailResponse(
+        team_id=team_id,
+        start_date=start_date,
+        end_date=end_date,
+        kpi=kpi,
+        total=len(deployments) if deployments else 0,
+        items=[],
+        deployments=deployments,
+    )
+
+
+@router.get(
+    "/{team_id}/dora/lead-time",
+    response_model=TeamKPIDetailResponse,
+    responses=_ERROR_RESPONSES,
+)
+@limiter.limit("30/minute")
+async def get_dora_lead_time(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+) -> TeamKPIDetailResponse:
+    """Lead time (DORA) detail."""
+    report = await get_team_report(request, team_id, start_date, end_date)
+    dora_config = load_dora_config()
+    kpi = compute_lead_time(
+        report.deliverables, dora_config.lead_time, start_date, end_date,
+    )
+    items = filter_dora_metric(
+        report.deliverables, "measured_items",
+        dora_config.lead_time, start_date, end_date,
+    )
+    return TeamKPIDetailResponse(
+        team_id=team_id,
+        start_date=start_date,
+        end_date=end_date,
+        kpi=kpi,
+        total=len(items),
+        items=items,
+        deployments=None,
     )
 
 
@@ -191,15 +482,42 @@ async def get_team_kpi_detail(
     """Return a single KPI with its metrics and all involved work items."""
     report = await get_team_report(request, team_id, start_date, end_date)
     kpi_config = load_kpi_config()
+    dora_config = load_dora_config()
     kpi = await _compute_single_kpi(
         kpi_name, report.deliverables, kpi_config, start_date, end_date,
-        request=request, team_id=team_id,
+        request=request, team_id=team_id, dora_config=dora_config,
     )
 
     seen_ids: set[int] = set()
     items: list = []
+    deployments = None
 
-    if isinstance(kpi, WIPDisciplineKPI) and kpi.persons:
+    if kpi_name == KPIName.DEPLOY_FREQUENCY:
+        tc = get_team_config(team_id)
+        df_team = tc.deploy_frequency if tc else None
+        has_df_config = df_team and (
+            df_team.definition_environment_ids
+            or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
+        )
+        if tc and has_df_config:
+            azure_client = get_azure_client(request)
+            raw, fmt = await fetch_deploy_frequency_deployments(
+                azure_client, df_team, tc.project, start_date, end_date,
+            )
+            deployments = (
+                deployments_to_summaries(raw) if fmt == "release"
+                else build_deployments_to_summaries(raw) if fmt == "build"
+                else environment_records_to_summaries(raw)
+            )
+        else:
+            deployments = []
+    elif kpi_name == KPIName.LEAD_TIME:
+        if dora_config.lead_time.enabled:
+            items = filter_dora_metric(
+                report.deliverables, "measured_items",
+                dora_config.lead_time, start_date, end_date,
+            )
+    elif isinstance(kpi, WIPDisciplineKPI) and kpi.persons:
         wip_ids = {wi.id for p in kpi.persons for wi in (p.work_items or [])}
         for d in report.deliverables:
             if d.id in wip_ids and d.id not in seen_ids:
@@ -213,6 +531,7 @@ async def get_team_kpi_detail(
                 rework_config=kpi_config.rework_rate,
                 dp_config=kpi_config.delivery_predictability,
                 fh_config=kpi_config.flow_hygiene,
+                td_config=kpi_config.tech_debt_ratio,
                 start=start_date,
                 end=end_date,
             ):
@@ -220,9 +539,10 @@ async def get_team_kpi_detail(
                     seen_ids.add(d.id)
                     items.append(d)
 
+    total = len(deployments) if deployments is not None else len(items)
     return TeamKPIDetailResponse(
         team_id=team_id, start_date=start_date, end_date=end_date,
-        kpi=kpi, total=len(items), items=items,
+        kpi=kpi, total=total, items=items, deployments=deployments,
     )
 
 
@@ -258,6 +578,54 @@ async def get_kpi_drilldown(
 
     report = await get_team_report(request, team_id, start_date, end_date)
     kpi_config = load_kpi_config()
+    dora_config = load_dora_config()
+
+    if kpi_name == KPIName.DEPLOY_FREQUENCY and metric == "deployments":
+        tc = get_team_config(team_id)
+        df_team = tc.deploy_frequency if tc else None
+        has_df_config = df_team and (
+            df_team.definition_environment_ids
+            or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
+        )
+        deployments = []
+        if tc and has_df_config:
+            azure_client = get_azure_client(request)
+            raw, fmt = await fetch_deploy_frequency_deployments(
+                azure_client, df_team, tc.project, start_date, end_date,
+            )
+            deployments = (
+                deployments_to_summaries(raw) if fmt == "release"
+                else build_deployments_to_summaries(raw) if fmt == "build"
+                else environment_records_to_summaries(raw)
+            )
+        total = len(deployments)
+        return DrilldownResponse(
+            team_id=team_id,
+            start_date=start_date,
+            end_date=end_date,
+            kpi_name=kpi_name.value,
+            metric=metric,
+            total=total,
+            items=[],
+            deployments=deployments[skip : skip + limit],
+        )
+
+    if kpi_name == KPIName.LEAD_TIME and metric == "measured_items":
+        filtered = filter_dora_metric(
+            report.deliverables, metric,
+            dora_config.lead_time, start_date, end_date,
+        )
+        total = len(filtered)
+        return DrilldownResponse(
+            team_id=team_id,
+            start_date=start_date,
+            end_date=end_date,
+            kpi_name=kpi_name.value,
+            metric=metric,
+            total=total,
+            items=filtered[skip : skip + limit],
+        )
+
     tc = get_team_config(team_id) if kpi_name == KPIName.WIP_DISCIPLINE else None
     filtered = filter_deliverables_by_metric(
         report.deliverables,
@@ -266,6 +634,7 @@ async def get_kpi_drilldown(
         dp_config=kpi_config.delivery_predictability,
         fh_config=kpi_config.flow_hygiene,
         wd_config=kpi_config.wip_discipline,
+        td_config=kpi_config.tech_debt_ratio,
         team_config=tc,
         start=start_date,
         end=end_date,
@@ -277,6 +646,48 @@ async def get_kpi_drilldown(
         start_date=start_date,
         end_date=end_date,
         kpi_name=kpi_name.value,
+        metric=metric,
+        total=total,
+        items=filtered[skip : skip + limit],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 6: GET /teams/{team_id}/delivery-snapshot/{metric}
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{team_id}/delivery-snapshot/{metric}",
+    response_model=SnapshotDrilldownResponse,
+    responses=_ERROR_RESPONSES,
+)
+@limiter.limit("30/minute")
+async def get_snapshot_drilldown(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    metric: str = Path(..., description="Snapshot metric to drill into"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Max items to return"),
+) -> SnapshotDrilldownResponse:
+    """Return work items behind a delivery snapshot metric."""
+    if metric not in VALID_SNAPSHOT_METRICS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid snapshot metric '{metric}'. "
+                   f"Valid: {sorted(VALID_SNAPSHOT_METRICS)}",
+        )
+    report = await get_team_report(request, team_id, start_date, end_date)
+    kpi_config = load_kpi_config()
+    filtered = filter_snapshot_metric(
+        report.deliverables, metric, kpi_config, start_date, end_date,
+    )
+    total = len(filtered)
+    return SnapshotDrilldownResponse(
+        team_id=team_id,
+        start_date=start_date,
+        end_date=end_date,
         metric=metric,
         total=total,
         items=filtered[skip : skip + limit],

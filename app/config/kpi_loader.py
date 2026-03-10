@@ -63,11 +63,27 @@ class WIPDisciplineConfig(BaseModel):
     rag: RAGThresholdsHigherIsBetter
 
 
+class TechDebtRatioBandRAG(BaseModel):
+    """Target-band thresholds: value should fall within [green_min, green_max]."""
+    amber_min: float = Field(..., ge=0, le=1)
+    green_min: float = Field(..., ge=0, le=1)
+    green_max: float = Field(..., ge=0, le=1)
+
+
+class TechDebtRatioConfig(BaseModel):
+    enabled: bool = True
+    description: str = ""
+    formula: str = ""
+    delivered_canonical_status: str = "Delivered"
+    rag: TechDebtRatioBandRAG
+
+
 class KPIConfig(BaseModel):
     rework_rate: ReworkRateConfig
     delivery_predictability: DeliveryPredictabilityConfig
     flow_hygiene: FlowHygieneConfig
     wip_discipline: WIPDisciplineConfig
+    tech_debt_ratio: TechDebtRatioConfig
 
 
 class KPIsRoot(BaseModel):

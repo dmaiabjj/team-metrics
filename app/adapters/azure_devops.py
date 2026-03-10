@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import httpx
 from tenacity import (
@@ -279,3 +279,346 @@ class AzureDevOpsClient:
             "Board WIP limits for project=%s board=%s: %s", project, board, limits,
         )
         return limits
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def get_release_deployments(
+        self,
+        project: str,
+        min_started_time: datetime,
+        max_started_time: datetime,
+        definition_environment_ids: list[tuple[int, int]] | None = None,
+    ) -> list[dict]:
+        """Fetch successful deployments to production in the date range.
+
+        Uses the Release Management API (vsrm.dev.azure.com). If
+        definition_environment_ids is provided, fetches deployments for each
+        (definition_id, definition_environment_id) pair and merges. Otherwise
+        returns empty list (caller must specify which pipelines count as prod).
+
+        Returns list of deployment objects (id, startedOn, release, environment, etc.).
+        """
+        base = f"https://vsrm.dev.azure.com/{self.org}/{project}/_apis/release/deployments"
+        min_iso = min_started_time.isoformat()
+        max_iso = max_started_time.isoformat()
+
+        if not definition_environment_ids:
+            return []
+
+        all_deployments: list[dict] = []
+        seen_ids: set[int] = set()
+
+        for definition_id, definition_environment_id in definition_environment_ids:
+            params: dict[str, str | int] = {
+                "api-version": "6.0",
+                "definitionId": definition_id,
+                "definitionEnvironmentId": definition_environment_id,
+                "deploymentStatus": "succeeded",
+                "minStartedTime": min_iso,
+                "maxStartedTime": max_iso,
+                "queryOrder": "ascending",
+                "$top": 1000,
+            }
+            try:
+                r = await self._client.get(
+                    base,
+                    params=params,
+                    auth=self._auth,
+                    headers=self._headers(),
+                )
+                r.raise_for_status()
+            except Exception:
+                logger.warning(
+                    "Could not fetch deployments for definition=%s env=%s: %s",
+                    definition_id, definition_environment_id, exc_info=True,
+                )
+                continue
+            data = r.json()
+            for dep in data.get("value") or []:
+                dep_id = dep.get("id")
+                if dep_id is not None and dep_id not in seen_ids:
+                    seen_ids.add(dep_id)
+                    all_deployments.append(dep)
+
+        logger.info(
+            "Release deployments for project=%s: %d in range",
+            project, len(all_deployments),
+        )
+        return all_deployments
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def get_build_deployments_by_stage(
+        self,
+        project: str,
+        min_started_time: datetime,
+        max_started_time: datetime,
+        definition_ids: list[int],
+        stage_name: str,
+    ) -> list[dict]:
+        """Fetch successful YAML pipeline runs where the given stage succeeded.
+
+        Uses Build API: list builds per definition, get timeline, filter by stage name.
+        Build query uses a 14-day buffer. Final filter is by stage startTime.
+        Returns list of deployment-like dicts: {buildId, definitionId, startTime, stageName, ...}.
+        """
+        base_builds = f"https://dev.azure.com/{self.org}/{project}/_apis/build/builds"
+        buffer = timedelta(days=14)
+        query_min = min_started_time - buffer
+        query_max = max_started_time + buffer
+        min_iso = query_min.isoformat()
+        max_iso = query_max.isoformat()
+        stage_name_lower = (stage_name or "").strip().lower()
+
+        deployments: list[dict] = []
+        seen: set[tuple[int, str]] = set()  # (build_id, stage_record_id)
+
+        for definition_id in definition_ids:
+            continuation_token: str | None = None
+            while True:
+                params: dict[str, str | int] = {
+                    "api-version": "7.0",
+                    "definitions": definition_id,
+                    "minTime": min_iso,
+                    "maxTime": max_iso,
+                    "resultFilter": "succeeded",
+                    "statusFilter": "completed",
+                    "$top": 500,
+                    "queryOrder": "finishTimeAscending",
+                }
+                if continuation_token:
+                    params["continuationToken"] = continuation_token
+                try:
+                    r = await self._client.get(
+                        base_builds,
+                        params=params,
+                        auth=self._auth,
+                        headers=self._headers(),
+                    )
+                    r.raise_for_status()
+                except Exception:
+                    logger.warning(
+                        "Could not fetch builds for definition=%s",
+                        definition_id, exc_info=True,
+                    )
+                    break
+                builds = r.json().get("value") or []
+                continuation_token = (
+                    r.headers.get("x-ms-continuationtoken")
+                    or r.headers.get("X-MS-ContinuationToken")
+                )
+                for build in builds:
+                    build_id = build.get("id")
+                    if build_id is None:
+                        continue
+                    try:
+                        tl_r = await self._client.get(
+                            f"{base_builds}/{build_id}/timeline",
+                            params={"api-version": "6.0"},
+                            auth=self._auth,
+                            headers=self._headers(),
+                        )
+                        tl_r.raise_for_status()
+                    except Exception:
+                        logger.warning(
+                            "Could not fetch timeline for build=%s",
+                            build_id, exc_info=True,
+                        )
+                        continue
+                    tl_data = tl_r.json()
+                    records = tl_data.get("records") or []
+                    for rec in records:
+                        if rec.get("type") != "Stage":
+                            continue
+                        if rec.get("result") != "succeeded":
+                            continue
+                        rec_name = (rec.get("name") or "").strip().lower()
+                        if not stage_name_lower or not (
+                            stage_name_lower in rec_name or rec_name in stage_name_lower
+                        ):
+                            continue
+                        stage_start_str = rec.get("startTime") or build.get("startTime", "")
+                        if stage_start_str:
+                            try:
+                                stage_start = datetime.fromisoformat(
+                                    stage_start_str.replace("Z", "+00:00")
+                                )
+                                if stage_start < min_started_time or stage_start > max_started_time:
+                                    continue
+                            except (ValueError, TypeError):
+                                pass
+                        rec_id = (rec.get("id") or "").strip().lower()
+                        key = (build_id, rec_id or str(rec.get("id", "")))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        deployments.append({
+                            "buildId": build_id,
+                            "definitionId": definition_id,
+                            "startTime": stage_start_str,
+                            "stageName": rec.get("name"),
+                            "stageId": rec.get("id"),
+                            "buildNumber": build.get("buildNumber"),
+                            "definitionName": build.get("definition", {}).get("name"),
+                        })
+                if not continuation_token:
+                    break
+
+        logger.info(
+            "Build deployments for project=%s stage=%s: %d in range",
+            project, stage_name or "?", len(deployments),
+        )
+        return deployments
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def get_release_deployments_by_definition_and_env_name(
+        self,
+        project: str,
+        min_started_time: datetime,
+        max_started_time: datetime,
+        definition_ids: list[int],
+        environment_name: str,
+    ) -> list[dict]:
+        """Fetch successful deployments for given pipelines, filtered by environment/stage name.
+
+        Uses Release API without definitionEnvironmentId; fetches per definitionId
+        and filters by releaseEnvironment.name. Use when you have pipeline IDs and
+        stage name (e.g. 'Coreflex PROD') but not integer definitionEnvironmentId.
+        """
+        base = f"https://vsrm.dev.azure.com/{self.org}/{project}/_apis/release/deployments"
+        min_iso = min_started_time.isoformat()
+        max_iso = max_started_time.isoformat()
+        env_name_lower = environment_name.strip().lower()
+
+        all_deployments: list[dict] = []
+        seen_ids: set[int] = set()
+
+        for definition_id in definition_ids:
+            params: dict[str, str | int] = {
+                "api-version": "6.0",
+                "definitionId": definition_id,
+                "deploymentStatus": "succeeded",
+                "minStartedTime": min_iso,
+                "maxStartedTime": max_iso,
+                "queryOrder": "ascending",
+                "$top": 1000,
+            }
+            try:
+                r = await self._client.get(
+                    base,
+                    params=params,
+                    auth=self._auth,
+                    headers=self._headers(),
+                )
+                r.raise_for_status()
+            except Exception:
+                logger.warning(
+                    "Could not fetch deployments for definition=%s",
+                    definition_id, exc_info=True,
+                )
+                continue
+            data = r.json()
+            for dep in data.get("value") or []:
+                env = dep.get("releaseEnvironment") or {}
+                dep_env_name = (env.get("name") or "").strip().lower()
+                if env_name_lower not in dep_env_name and dep_env_name not in env_name_lower:
+                    continue
+                dep_id = dep.get("id")
+                if dep_id is not None and dep_id not in seen_ids:
+                    seen_ids.add(dep_id)
+                    all_deployments.append(dep)
+        logger.info(
+            "Release deployments for project=%s env=%s: %d in range",
+            project, environment_name, len(all_deployments),
+        )
+        return all_deployments
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def get_environment_deployment_records(
+        self,
+        project: str,
+        environment_id: str,
+        min_started_time: datetime,
+        max_started_time: datetime,
+    ) -> list[dict]:
+        """Fetch deployment records for an environment (GUID) via Environments API.
+
+        Uses Pipelines Environments API. environment_id can be integer or GUID.
+        Returns records filtered by startTime in range. Result format differs from
+        Release API; caller must normalize if needed.
+        """
+        base = f"https://dev.azure.com/{self.org}/{project}/_apis/pipelines/environments/{environment_id}/environmentdeploymentrecords"
+        all_records: list[dict] = []
+        continuation_token: str | None = None
+
+        while True:
+            params: dict[str, str | int] = {
+                "api-version": "7.2-preview.1",
+                "$top": 500,
+            }
+            if continuation_token:
+                params["continuationToken"] = continuation_token
+            try:
+                r = await self._client.get(
+                    base,
+                    params=params,
+                    auth=self._auth,
+                    headers=self._headers(),
+                )
+                r.raise_for_status()
+            except Exception as e:
+                # #region agent log
+                try:
+                    import json
+                    with open("/Volumes/Personal Data/VenturesLab/ai/team_metrics/.cursor/debug-79de70.log", "a") as f:
+                        f.write(json.dumps({"hypothesisId": "F2", "location": "azure_devops.py:env_api_error", "message": "Environments API exception", "data": {"project": project, "env_id": environment_id, "error": str(e)}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                except Exception:
+                    pass
+                # #endregion
+                logger.warning(
+                    "Could not fetch environment deployment records for env=%s",
+                    environment_id, exc_info=True,
+                )
+                break
+            data = r.json()
+            records = data.get("value") or []
+            total_raw += len(records)
+            for rec in records:
+                if first_rec_keys is None and rec:
+                    first_rec_keys = list(rec.keys())
+                start_str = rec.get("startTime")
+                if start_str:
+                    try:
+                        start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                        if min_started_time <= start_dt <= max_started_time:
+                            if rec.get("result") == "succeeded":
+                                all_records.append(rec)
+                    except (ValueError, TypeError):
+                        pass
+            continuation_token = data.get("continuationToken")
+            if not continuation_token:
+                break
+
+        logger.info(
+            "Environment deployment records for project=%s env=%s: %d in range",
+            project, environment_id, len(all_records),
+        )
+        return all_records

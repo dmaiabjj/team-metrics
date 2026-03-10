@@ -59,6 +59,23 @@
       }
     },
     {
+      "name": "Team DORA",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/dora?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "dora"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "DORA metrics only (deploy frequency, lead time) for one team."
+      }
+    },
+    {
       "name": "Team KPI Detail - Rework Rate",
       "request": {
         "method": "GET",
@@ -384,6 +401,248 @@
           ]
         },
         "description": "Items assigned to persons who exceeded their WIP limit."
+      }
+    },
+    {
+      "name": "Team KPI Detail - Tech Debt Ratio",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/tech-debt-ratio?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "tech-debt-ratio"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Tech Debt Ratio KPI detail with all involved work items."
+      }
+    },
+    {
+      "name": "Drilldown - Tech Debt Ratio / tech_debt_deployed",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/tech-debt-ratio/drilldown/tech_debt_deployed?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "tech-debt-ratio", "drilldown", "tech_debt_deployed"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Delivered items that are tech debt."
+      }
+    },
+    {
+      "name": "Drilldown - Tech Debt Ratio / non_tech_debt_deployed",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/tech-debt-ratio/drilldown/non_tech_debt_deployed?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "tech-debt-ratio", "drilldown", "non_tech_debt_deployed"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Delivered items that are not tech debt."
+      }
+    },
+    {
+      "name": "Team KPI Detail - Deploy Frequency (DORA)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/dora/deploy-frequency?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "dora", "deploy-frequency"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Deploy Frequency (DORA) detail: deployments to production per day. Returns deployments list when configured."
+      }
+    },
+    {
+      "name": "Team KPI Detail - Lead Time (DORA)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/dora/lead-time?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "dora", "lead-time"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Lead Time (DORA) detail: avg time from work started to delivered. Returns measured_items (work items in sample)."
+      }
+    },
+    {
+      "name": "Drilldown - Deploy Frequency / deployments",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/dora/deploy-frequency/drilldown/deployments?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "dora", "deploy-frequency", "drilldown", "deployments"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "skip", "value": "0", "description": "Pagination offset"},
+            {"key": "limit", "value": "100", "description": "Max items (1-500)"}
+          ]
+        },
+        "description": "List of successful deployments to production in the period. Returns deployments array."
+      }
+    },
+    {
+      "name": "Drilldown - Lead Time / measured_items",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/dora/lead-time/drilldown/measured_items?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "dora", "lead-time", "drilldown", "measured_items"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"},
+            {"key": "skip", "value": "0", "description": "Pagination offset"},
+            {"key": "limit", "value": "100", "description": "Max items (1-500)"}
+          ]
+        },
+        "description": "Work items used to compute lead time (committed + delivered with start_date and finish_date)."
+      }
+    },
+    {
+      "name": "Snapshot Drilldown - Delivered",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/delivery-snapshot/delivered?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "delivery-snapshot", "delivered"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}"},
+            {"key": "end_date", "value": "{{end_date}}"}
+          ]
+        },
+        "description": "Work items behind the 'delivered' snapshot metric."
+      }
+    },
+    {
+      "name": "Snapshot Drilldown - Committed",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/delivery-snapshot/committed?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "delivery-snapshot", "committed"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}"},
+            {"key": "end_date", "value": "{{end_date}}"}
+          ]
+        },
+        "description": "Work items behind the 'committed' snapshot metric."
+      }
+    },
+    {
+      "name": "Snapshot Drilldown - Committed in Period",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/delivery-snapshot/committed_in_period?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "delivery-snapshot", "committed_in_period"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}"},
+            {"key": "end_date", "value": "{{end_date}}"}
+          ]
+        },
+        "description": "Items that entered active status within the period (not spillovers)."
+      }
+    },
+    {
+      "name": "Snapshot Drilldown - Spillovers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/delivery-snapshot/spillovers?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "delivery-snapshot", "spillovers"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}"},
+            {"key": "end_date", "value": "{{end_date}}"}
+          ]
+        },
+        "description": "Work items behind the 'spillovers' snapshot metric."
+      }
+    },
+    {
+      "name": "Snapshot Drilldown - Rework Items",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/delivery-snapshot/rework_items?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "delivery-snapshot", "rework_items"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}"},
+            {"key": "end_date", "value": "{{end_date}}"}
+          ]
+        },
+        "description": "Work items behind the 'rework_items' snapshot metric."
+      }
+    },
+    {
+      "name": "Snapshot Drilldown - Tech Debts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/delivery-snapshot/tech_debts?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "delivery-snapshot", "tech_debts"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}"},
+            {"key": "end_date", "value": "{{end_date}}"}
+          ]
+        },
+        "description": "All items flagged as technical debt."
+      }
+    },
+    {
+      "name": "Snapshot Drilldown - Bugs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/delivery-snapshot/bugs?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "delivery-snapshot", "bugs"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}"},
+            {"key": "end_date", "value": "{{end_date}}"}
+          ]
+        },
+        "description": "Items with at least one child bug."
       }
     },
     {

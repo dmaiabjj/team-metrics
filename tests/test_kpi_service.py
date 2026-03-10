@@ -10,22 +10,27 @@ from app.config.kpi_loader import (
     DeliveryPredictabilityConfig,
     FlowHygieneConfig,
     FlowHygieneRAGThresholds,
+    KPIConfig,
     RAGThresholds,
     RAGThresholdsHigherIsBetter,
     ReworkRateConfig,
+    TechDebtRatioBandRAG,
+    TechDebtRatioConfig,
     WIPDisciplineConfig,
 )
 from app.config.team_loader import StateMapping, TeamConfig
-from app.schemas.kpi import DeliveryPredictabilityKPI, FlowHygieneKPI, RAGStatus, ReworkRateKPI
+from app.schemas.kpi import DeliveryPredictabilityKPI, FlowHygieneKPI, RAGStatus, ReworkRateKPI, TechDebtRatioKPI
 from app.schemas.report import DeliverableRow, StatusTimelineEntry, WorkItemRef
 from app.services.kpi_service import (
     compute_delivery_predictability,
     compute_flow_hygiene,
     compute_kpi_average,
     compute_rework_rate,
+    compute_tech_debt_ratio,
     compute_wip_discipline,
     filter_deliverables_by_metric,
 )
+from app.services.snapshot_service import compute_delivery_snapshot, filter_snapshot_metric
 
 _DEFAULT_CONFIG = ReworkRateConfig(
     enabled=True,
@@ -57,6 +62,7 @@ def _make_deliverable(
     canonical_status: str | None = None,
     developer: str | None = None,
     qa: str | None = None,
+    is_technical_debt: bool = False,
 ) -> DeliverableRow:
     timeline = []
     if timeline_canons:
@@ -81,6 +87,7 @@ def _make_deliverable(
         status_at_end=status_at_end,
         developer=developer,
         qa=qa,
+        is_technical_debt=is_technical_debt,
     )
 
 
@@ -882,3 +889,315 @@ class TestFilterWDMetrics:
             start=date(2025, 1, 1), end=date(2025, 1, 1),
         )
         assert {d.id for d in result} == {1, 2, 3, 4}
+
+
+# ---------------------------------------------------------------------------
+# Tech Debt Ratio defaults
+# ---------------------------------------------------------------------------
+
+_DEFAULT_TD_CONFIG = TechDebtRatioConfig(
+    enabled=True,
+    description="test",
+    formula="test",
+    delivered_canonical_status="Delivered",
+    rag=TechDebtRatioBandRAG(amber_min=0.10, green_min=0.20, green_max=0.30),
+)
+
+
+class TestComputeTechDebtRatio:
+    def test_empty_deliverables(self):
+        result = compute_tech_debt_ratio([], _DEFAULT_TD_CONFIG)
+        assert result.name == "tech_debt_ratio"
+        assert result.value == 0.0
+        assert result.rag == RAGStatus.RED
+        assert result.tech_debt_count == 0
+        assert result.total_deployed == 0
+
+    def test_no_tech_debt(self):
+        """0% tech debt -> below amber_min -> RED."""
+        items = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(10)
+        ]
+        result = compute_tech_debt_ratio(items, _DEFAULT_TD_CONFIG)
+        assert result.value == 0.0
+        assert result.rag == RAGStatus.RED
+        assert result.tech_debt_count == 0
+        assert result.total_deployed == 10
+
+    def test_all_tech_debt(self):
+        """100% tech debt -> above green_max -> RED."""
+        items = [
+            _make_deliverable(i, canonical_status="Delivered", is_technical_debt=True)
+            for i in range(5)
+        ]
+        result = compute_tech_debt_ratio(items, _DEFAULT_TD_CONFIG)
+        assert result.value == 1.0
+        assert result.rag == RAGStatus.RED
+        assert result.tech_debt_count == 5
+        assert result.total_deployed == 5
+
+    def test_red_below_amber_min(self):
+        """5% tech debt -> below 10% amber_min -> RED."""
+        deployed = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(100)
+        ]
+        for i in range(5):
+            deployed[i].is_technical_debt = True
+        result = compute_tech_debt_ratio(deployed, _DEFAULT_TD_CONFIG)
+        assert result.value == pytest.approx(0.05)
+        assert result.rag == RAGStatus.RED
+
+    def test_amber_range(self):
+        """15% tech debt -> in [10%, 20%) -> AMBER."""
+        deployed = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(100)
+        ]
+        for i in range(15):
+            deployed[i].is_technical_debt = True
+        result = compute_tech_debt_ratio(deployed, _DEFAULT_TD_CONFIG)
+        assert result.value == pytest.approx(0.15)
+        assert result.rag == RAGStatus.AMBER
+
+    def test_amber_at_boundary(self):
+        """10% tech debt -> exactly amber_min -> AMBER."""
+        deployed = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(100)
+        ]
+        for i in range(10):
+            deployed[i].is_technical_debt = True
+        result = compute_tech_debt_ratio(deployed, _DEFAULT_TD_CONFIG)
+        assert result.value == pytest.approx(0.10)
+        assert result.rag == RAGStatus.AMBER
+
+    def test_green_at_lower_boundary(self):
+        """20% tech debt -> exactly green_min -> GREEN."""
+        deployed = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(100)
+        ]
+        for i in range(20):
+            deployed[i].is_technical_debt = True
+        result = compute_tech_debt_ratio(deployed, _DEFAULT_TD_CONFIG)
+        assert result.value == pytest.approx(0.20)
+        assert result.rag == RAGStatus.GREEN
+
+    def test_green_at_upper_boundary(self):
+        """30% tech debt -> exactly green_max -> GREEN."""
+        deployed = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(100)
+        ]
+        for i in range(30):
+            deployed[i].is_technical_debt = True
+        result = compute_tech_debt_ratio(deployed, _DEFAULT_TD_CONFIG)
+        assert result.value == pytest.approx(0.30)
+        assert result.rag == RAGStatus.GREEN
+
+    def test_red_above_green_max(self):
+        """35% tech debt -> above 30% green_max -> RED."""
+        deployed = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(100)
+        ]
+        for i in range(35):
+            deployed[i].is_technical_debt = True
+        result = compute_tech_debt_ratio(deployed, _DEFAULT_TD_CONFIG)
+        assert result.value == pytest.approx(0.35)
+        assert result.rag == RAGStatus.RED
+
+    def test_non_delivered_items_excluded(self):
+        """Only 'Delivered' items count, others are excluded from ratio."""
+        items = [
+            _make_deliverable(1, canonical_status="Delivered", is_technical_debt=True),
+            _make_deliverable(2, canonical_status="Delivered"),
+            _make_deliverable(3, canonical_status="Development Active", is_technical_debt=True),
+            _make_deliverable(4, canonical_status="QA Active"),
+        ]
+        result = compute_tech_debt_ratio(items, _DEFAULT_TD_CONFIG)
+        assert result.total_deployed == 2
+        assert result.tech_debt_count == 1
+        assert result.value == pytest.approx(0.5)
+
+    def test_display_format(self):
+        items = [
+            _make_deliverable(1, canonical_status="Delivered", is_technical_debt=True),
+            _make_deliverable(2, canonical_status="Delivered"),
+        ]
+        result = compute_tech_debt_ratio(items, _DEFAULT_TD_CONFIG)
+        assert result.display == "50.0%"
+
+
+class TestFilterTDMetrics:
+    def test_tech_debt_deployed(self):
+        items = [
+            _make_deliverable(1, canonical_status="Delivered", is_technical_debt=True),
+            _make_deliverable(2, canonical_status="Delivered"),
+            _make_deliverable(3, canonical_status="Development Active", is_technical_debt=True),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "tech_debt_deployed", td_config=_DEFAULT_TD_CONFIG,
+        )
+        assert len(result) == 1
+        assert result[0].id == 1
+
+    def test_non_tech_debt_deployed(self):
+        items = [
+            _make_deliverable(1, canonical_status="Delivered", is_technical_debt=True),
+            _make_deliverable(2, canonical_status="Delivered"),
+            _make_deliverable(3, canonical_status="Delivered"),
+        ]
+        result = filter_deliverables_by_metric(
+            items, "non_tech_debt_deployed", td_config=_DEFAULT_TD_CONFIG,
+        )
+        assert len(result) == 2
+        assert {d.id for d in result} == {2, 3}
+
+    def test_td_config_required(self):
+        with pytest.raises(ValueError, match="td_config required"):
+            filter_deliverables_by_metric([], "tech_debt_deployed")
+
+
+# ---------------------------------------------------------------------------
+# Delivery Snapshot
+# ---------------------------------------------------------------------------
+
+_DEFAULT_KPI_CONFIG = KPIConfig(
+    rework_rate=_DEFAULT_CONFIG,
+    delivery_predictability=_DEFAULT_DP_CONFIG,
+    flow_hygiene=FlowHygieneConfig(
+        enabled=True,
+        queue_states=["Ready for QA"],
+        default_wip_limits={"Ready for QA": 3},
+        rag=FlowHygieneRAGThresholds(green_max=1.0, amber_max=1.2),
+    ),
+    wip_discipline=WIPDisciplineConfig(
+        enabled=True,
+        dev_wip_limit=3,
+        qa_wip_limit=2,
+        compliance_threshold=0.80,
+        rag=RAGThresholdsHigherIsBetter(green_min=0.80, amber_min=0.60),
+    ),
+    tech_debt_ratio=_DEFAULT_TD_CONFIG,
+)
+
+
+class TestComputeDeliverySnapshot:
+    _start = date(2025, 1, 1)
+    _end = date(2025, 1, 31)
+
+    def test_empty_deliverables(self):
+        result = compute_delivery_snapshot([], _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert result.delivered == 0
+        assert result.committed == 0
+        assert result.committed_in_period == 0
+        assert result.spillovers == 0
+        assert result.rework_items == 0
+        assert result.tech_debts == 0
+        assert result.bugs == 0
+
+    def test_all_metrics(self):
+        items = [
+            _make_deliverable(
+                1, timeline_canons=["QA Active"], tags=["Code Defect"],
+                start_date=datetime(2025, 1, 5, tzinfo=timezone.utc),
+                canonical_status="Delivered", is_technical_debt=True,
+                child_bugs=[WorkItemRef(id=100, title="Bug A")],
+            ),
+            _make_deliverable(
+                2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc),
+                canonical_status="Delivered",
+            ),
+            _make_deliverable(
+                3, is_spillover=True, canonical_status="Development Active",
+                is_technical_debt=True,
+            ),
+            _make_deliverable(
+                4, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc),
+                canonical_status="QA Active",
+                child_bugs=[WorkItemRef(id=200, title="Bug B")],
+            ),
+        ]
+        result = compute_delivery_snapshot(items, _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert result.committed == 4
+        assert result.committed_in_period == 3
+        assert result.delivered == 2
+        assert result.spillovers == 1
+        assert result.rework_items == 1
+        assert result.tech_debts == 2
+        assert result.bugs == 2
+
+    def test_only_committed_counted_for_delivered(self):
+        """Items outside the period are not committed and cannot be delivered."""
+        items = [
+            _make_deliverable(
+                1, start_date=datetime(2024, 12, 1, tzinfo=timezone.utc),
+                canonical_status="Delivered",
+            ),
+        ]
+        result = compute_delivery_snapshot(items, _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert result.committed == 0
+        assert result.delivered == 0
+
+
+class TestFilterSnapshotMetric:
+    _start = date(2025, 1, 1)
+    _end = date(2025, 1, 31)
+
+    def _items(self):
+        return [
+            _make_deliverable(
+                1, timeline_canons=["QA Active"], tags=["Code Defect"],
+                start_date=datetime(2025, 1, 5, tzinfo=timezone.utc),
+                canonical_status="Delivered", is_technical_debt=True,
+                child_bugs=[WorkItemRef(id=100, title="Bug A")],
+            ),
+            _make_deliverable(
+                2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc),
+                canonical_status="Delivered",
+            ),
+            _make_deliverable(
+                3, is_spillover=True, canonical_status="Development Active",
+                is_technical_debt=True,
+            ),
+            _make_deliverable(
+                4, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc),
+                canonical_status="QA Active",
+                child_bugs=[WorkItemRef(id=200, title="Bug B")],
+            ),
+        ]
+
+    def test_delivered(self):
+        result = filter_snapshot_metric(self._items(), "delivered", _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert {d.id for d in result} == {1, 2}
+
+    def test_committed(self):
+        result = filter_snapshot_metric(self._items(), "committed", _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert {d.id for d in result} == {1, 2, 3, 4}
+
+    def test_committed_in_period(self):
+        result = filter_snapshot_metric(self._items(), "committed_in_period", _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert {d.id for d in result} == {1, 2, 4}
+
+    def test_spillovers(self):
+        result = filter_snapshot_metric(self._items(), "spillovers", _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert {d.id for d in result} == {3}
+
+    def test_rework_items(self):
+        result = filter_snapshot_metric(self._items(), "rework_items", _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert {d.id for d in result} == {1}
+
+    def test_tech_debts(self):
+        result = filter_snapshot_metric(self._items(), "tech_debts", _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert {d.id for d in result} == {1, 3}
+
+    def test_bugs(self):
+        result = filter_snapshot_metric(self._items(), "bugs", _DEFAULT_KPI_CONFIG, self._start, self._end)
+        assert {d.id for d in result} == {1, 4}
+
+    def test_invalid_metric(self):
+        with pytest.raises(ValueError, match="Unknown snapshot metric"):
+            filter_snapshot_metric([], "invalid", _DEFAULT_KPI_CONFIG, self._start, self._end)

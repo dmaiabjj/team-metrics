@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, Request
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.config.kpi_loader import FlowHygieneConfig
-from app.config.team_loader import TeamConfig, load_teams_config
+from app.config.team_loader import DeployFrequencyTeamConfig, TeamConfig, load_teams_config
 from app.services.report_service import run_report
 from app.settings import get_settings
 
@@ -67,6 +67,61 @@ async def get_team_report(request: Request, team_id: str, start_date: date, end_
             detail=f"Report generation timed out after {settings.report_timeout}s",
         )
     return report
+
+
+async def fetch_deploy_frequency_deployments(
+    azure_client: AzureDevOpsClient,
+    df_config: DeployFrequencyTeamConfig,
+    project: str,
+    start_date: date,
+    end_date: date,
+) -> tuple[list[dict], str]:
+    """Fetch deployments for deploy frequency based on config.
+
+    Returns (deployments, format). format is "release" | "environment" | "build".
+    Use deployments_to_summaries, environment_records_to_summaries, or
+    build_deployments_to_summaries accordingly.
+    """
+    min_t = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
+    max_t = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc)
+
+    if df_config.definition_environment_ids:
+        ids = [(d.definition_id, d.environment_id) for d in df_config.definition_environment_ids]
+        deployments = await azure_client.get_release_deployments(
+            project, min_t, max_t, definition_environment_ids=ids,
+        )
+        return deployments, "release"
+
+    if df_config.definition_ids and df_config.environment_name:
+        deployments = await azure_client.get_build_deployments_by_stage(
+            project, min_t, max_t,
+            df_config.definition_ids,
+            stage_name=df_config.environment_name,
+        )
+        return deployments, "build"
+
+    if df_config.definition_ids and df_config.environment_name:
+        deployments = await azure_client.get_release_deployments_by_definition_and_env_name(
+            project, min_t, max_t,
+            df_config.definition_ids,
+            df_config.environment_name,
+        )
+        if not deployments and df_config.environment_guid:
+            env_project = df_config.environment_project or project
+            records = await azure_client.get_environment_deployment_records(
+                env_project, df_config.environment_guid, min_t, max_t,
+            )
+            return records, "environment"
+        return deployments, "release"
+
+    if df_config.definition_ids and df_config.environment_guid:
+        env_project = df_config.environment_project or project
+        records = await azure_client.get_environment_deployment_records(
+            env_project, df_config.environment_guid, min_t, max_t,
+        )
+        return records, "environment"
+
+    return [], "release"
 
 
 async def resolve_wip_limits(

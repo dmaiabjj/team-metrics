@@ -10,6 +10,7 @@ from app.config.kpi_loader import (
     DeliveryPredictabilityConfig,
     FlowHygieneConfig,
     ReworkRateConfig,
+    TechDebtRatioConfig,
     WIPDisciplineConfig,
 )
 from app.config.team_loader import TeamConfig
@@ -23,6 +24,7 @@ from app.schemas.kpi import (
     RAGStatus,
     ReworkRateKPI,
     StateQueueMetric,
+    TechDebtRatioKPI,
     WIPDisciplineKPI,
 )
 from app.schemas.report import DeliverableRow
@@ -443,13 +445,60 @@ def compute_wip_discipline(
 
 
 # ---------------------------------------------------------------------------
+# Tech Debt Ratio
+# ---------------------------------------------------------------------------
+
+def _rag_band(value: float, config: TechDebtRatioConfig) -> RAGStatus:
+    """Target-band RAG: GREEN when value is in [green_min, green_max], AMBER in
+    [amber_min, green_min), RED outside [amber_min, green_max]."""
+    r = config.rag
+    if r.green_min <= value <= r.green_max:
+        return RAGStatus.GREEN
+    if r.amber_min <= value < r.green_min:
+        return RAGStatus.AMBER
+    return RAGStatus.RED
+
+
+def compute_tech_debt_ratio(
+    deliverables: list[DeliverableRow],
+    config: TechDebtRatioConfig,
+) -> TechDebtRatioKPI:
+    delivered_canonical = config.delivered_canonical_status
+    deployed = [d for d in deliverables if d.canonical_status == delivered_canonical]
+    tech_debt = [d for d in deployed if d.is_technical_debt]
+
+    total = len(deployed)
+    debt_count = len(tech_debt)
+    value = debt_count / total if total > 0 else 0.0
+    rag = _rag_band(value, config)
+
+    r = config.rag
+    amber_pct = f"{r.amber_min * 100:.0f}%"
+    green_lo = f"{r.green_min * 100:.0f}%"
+    green_hi = f"{r.green_max * 100:.0f}%"
+
+    return TechDebtRatioKPI(
+        value=round(value, 4),
+        display=f"{value * 100:.1f}%",
+        rag=rag,
+        tech_debt_count=debt_count,
+        total_deployed=total,
+        thresholds={
+            "green": f"{green_lo}-{green_hi}",
+            "amber": f"{amber_pct}-{green_lo}",
+            "red": f"< {amber_pct} or > {green_hi}",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cross-team average
 # ---------------------------------------------------------------------------
 
 def compute_kpi_average(
     kpi_name: str,
     team_kpis: list,
-    config: ReworkRateConfig | DeliveryPredictabilityConfig | FlowHygieneConfig | WIPDisciplineConfig,
+    config: ReworkRateConfig | DeliveryPredictabilityConfig | FlowHygieneConfig | WIPDisciplineConfig | TechDebtRatioConfig,
 ) -> AverageKPI:
     if not team_kpis:
         return AverageKPI(
@@ -461,7 +510,9 @@ def compute_kpi_average(
         )
     avg = sum(k.value for k in team_kpis) / len(team_kpis)
 
-    if isinstance(config, (DeliveryPredictabilityConfig, WIPDisciplineConfig)):
+    if isinstance(config, TechDebtRatioConfig):
+        rag = _rag_band(avg, config)
+    elif isinstance(config, (DeliveryPredictabilityConfig, WIPDisciplineConfig)):
         rag = _rag_higher_is_better(avg, config)
     elif isinstance(config, FlowHygieneConfig):
         rag = _rag_flow_hygiene(avg, config)
@@ -498,7 +549,11 @@ _WD_METRICS = frozenset({
     "developers", "qas", "compliant_gte_80", "over_wip_limit",
 })
 
-VALID_DRILLDOWN_METRICS = _REWORK_METRICS | _DP_METRICS | _FH_METRICS | _WD_METRICS
+_TD_METRICS = frozenset({
+    "tech_debt_deployed", "non_tech_debt_deployed",
+})
+
+VALID_DRILLDOWN_METRICS = _REWORK_METRICS | _DP_METRICS | _FH_METRICS | _WD_METRICS | _TD_METRICS
 
 
 def filter_deliverables_by_metric(
@@ -508,6 +563,7 @@ def filter_deliverables_by_metric(
     dp_config: DeliveryPredictabilityConfig | None = None,
     fh_config: FlowHygieneConfig | None = None,
     wd_config: WIPDisciplineConfig | None = None,
+    td_config: TechDebtRatioConfig | None = None,
     team_config: TeamConfig | None = None,
     start: date | None = None,
     end: date | None = None,
@@ -586,5 +642,15 @@ def filter_deliverables_by_metric(
                 if (d.developer and d.developer.lower() in names)
                 or (d.qa and d.qa.lower() in names)
             ]
+
+    if metric in _TD_METRICS:
+        if td_config is None:
+            raise ValueError("td_config required for tech debt ratio metrics")
+        delivered_canonical = td_config.delivered_canonical_status
+        deployed = [d for d in deliverables if d.canonical_status == delivered_canonical]
+        if metric == "tech_debt_deployed":
+            return [d for d in deployed if d.is_technical_debt]
+        if metric == "non_tech_debt_deployed":
+            return [d for d in deployed if not d.is_technical_debt]
 
     return []

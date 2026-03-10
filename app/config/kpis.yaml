@@ -54,3 +54,13 @@ kpis:
     rag:
       green_min: 0.80
       amber_min: 0.60
+
+  tech_debt_ratio:
+    enabled: true
+    description: "Proportion of delivered items that are tech debt"
+    formula: "tech_debt_deployed / total_deployed"
+    delivered_canonical_status: "Delivered"
+    rag:
+      amber_min: 0.10
+      green_min: 0.20
+      green_max: 0.30
