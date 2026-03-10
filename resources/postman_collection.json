@@ -455,6 +455,57 @@
       }
     },
     {
+      "name": "Team KPI Detail - Initiative Delivery",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/initiative-delivery?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "initiative-delivery"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Initiative Delivery KPI detail: proportion of committed initiatives delivered."
+      }
+    },
+    {
+      "name": "Drilldown - Initiative Delivery / initiatives_committed",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/initiative-delivery/drilldown/initiatives_committed?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "initiative-delivery", "drilldown", "initiatives_committed"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Initiatives (Epics/Features) with committed child deliverables."
+      }
+    },
+    {
+      "name": "Drilldown - Initiative Delivery / initiatives_delivered",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/initiative-delivery/drilldown/initiatives_delivered?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "initiative-delivery", "drilldown", "initiatives_delivered"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Initiatives delivered (parent state maps to Delivered)."
+      }
+    },
+    {
       "name": "Team KPI Detail - Deploy Frequency (DORA)",
       "request": {
         "method": "GET",

@@ -139,11 +139,28 @@ class TechDebtRatioKPI(BaseModel):
     )
 
 
+class InitiativeDeliveryKPI(BaseModel):
+    name: str = "initiative_delivery"
+    value: float = Field(description="Initiative delivery rate as decimal (e.g. 0.90 for 90%)")
+    display: str = Field(description="Human-readable percentage (e.g. '90.0%')")
+    rag: RAGStatus
+    initiatives_committed: int = Field(description="Initiatives (Epics/Features) with committed work")
+    initiatives_delivered: int = Field(description="Initiatives that reached Delivered status")
+    thresholds: dict[str, str] = Field(
+        default_factory=lambda: {
+            "green": ">= 85%",
+            "amber": "70-85%",
+            "red": "< 70%",
+        }
+    )
+
+
 _KPI_TAG_MAP = {
     "delivery_predictability": "delivery_predictability",
     "flow_hygiene": "flow_hygiene",
     "wip_discipline": "wip_discipline",
     "tech_debt_ratio": "tech_debt_ratio",
+    "initiative_delivery": "initiative_delivery",
     "deploy_frequency": "deploy_frequency",
     "lead_time": "lead_time",
 }
@@ -161,6 +178,7 @@ KPIResult = Annotated[
         Annotated[FlowHygieneKPI, Tag("flow_hygiene")],
         Annotated[WIPDisciplineKPI, Tag("wip_discipline")],
         Annotated[TechDebtRatioKPI, Tag("tech_debt_ratio")],
+        Annotated[InitiativeDeliveryKPI, Tag("initiative_delivery")],
         Annotated[DeployFrequencyKPI, Tag("deploy_frequency")],
         Annotated[LeadTimeKPI, Tag("lead_time")],
     ],
@@ -241,6 +259,14 @@ class AverageKPI(BaseModel):
     display: str
     rag: RAGStatus
     team_count: int
+    initiatives_committed: int | None = Field(
+        default=None,
+        description="Sum of initiatives committed across teams (initiative_delivery only)",
+    )
+    initiatives_delivered: int | None = Field(
+        default=None,
+        description="Sum of initiatives delivered across teams (initiative_delivery only)",
+    )
 
 
 class TeamError(BaseModel):

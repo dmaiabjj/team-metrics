@@ -75,13 +75,25 @@ async def fetch_deploy_frequency_deployments(
     project: str,
     start_date: date,
     end_date: date,
+    *,
+    team_id: str | None = None,
+    deployment_cache: object | None = None,
 ) -> tuple[list[dict], str]:
     """Fetch deployments for deploy frequency based on config.
 
     Returns (deployments, format). format is "release" | "environment" | "build".
     Use deployments_to_summaries, environment_records_to_summaries, or
     build_deployments_to_summaries accordingly.
+
+    If team_id and deployment_cache are provided, checks deployment cache first.
     """
+    from app.cache import DeploymentCache
+
+    if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+        cached = deployment_cache.get(team_id, start_date, end_date)
+        if cached is not None:
+            return cached
+
     min_t = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
     max_t = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc)
 
@@ -90,6 +102,8 @@ async def fetch_deploy_frequency_deployments(
         deployments = await azure_client.get_release_deployments(
             project, min_t, max_t, definition_environment_ids=ids,
         )
+        if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+            deployment_cache.put(team_id, start_date, end_date, deployments, "release")
         return deployments, "release"
 
     if df_config.definition_ids and df_config.environment_name:
@@ -100,6 +114,8 @@ async def fetch_deploy_frequency_deployments(
             stage_name=df_config.environment_name,
         )
         if deployments:
+            if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+                deployment_cache.put(team_id, start_date, end_date, deployments, "build")
             return deployments, "build"
 
         # Fallback to Release API (classic pipelines).
@@ -109,6 +125,8 @@ async def fetch_deploy_frequency_deployments(
             df_config.environment_name,
         )
         if deployments:
+            if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+                deployment_cache.put(team_id, start_date, end_date, deployments, "release")
             return deployments, "release"
 
         # Final fallback to Environments API if environment_guid is configured.
@@ -117,28 +135,39 @@ async def fetch_deploy_frequency_deployments(
             records = await azure_client.get_environment_deployment_records(
                 env_project, df_config.environment_guid, min_t, max_t,
             )
+            if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+                deployment_cache.put(team_id, start_date, end_date, records, "environment")
             return records, "environment"
 
-        return [], "build"
+        empty: tuple[list[dict], str] = ([], "build")
+        if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+            deployment_cache.put(team_id, start_date, end_date, empty[0], empty[1])
+        return empty
 
     if df_config.definition_ids and df_config.environment_guid:
         env_project = df_config.environment_project or project
         records = await azure_client.get_environment_deployment_records(
             env_project, df_config.environment_guid, min_t, max_t,
         )
+        if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+            deployment_cache.put(team_id, start_date, end_date, records, "environment")
         return records, "environment"
 
-    return [], "release"
+    empty: tuple[list[dict], str] = ([], "release")
+    if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+        deployment_cache.put(team_id, start_date, end_date, empty[0], empty[1])
+    return empty
 
 
 async def resolve_wip_limits(
     azure_client: AzureDevOpsClient | None,
     team_config: TeamConfig,
     fh_config: FlowHygieneConfig,
+    wip_limits_override: dict[str, int] | None = None,
 ) -> dict[str, tuple[int, str]]:
     """Resolve WIP limits per state with 3-tier fallback.
 
-    Priority: Azure DevOps board > teams.yaml > kpis.yaml default.
+    Priority: Azure DevOps board > kpis.yaml teams (wip_limits_override) > kpis.yaml default.
     Returns {state: (limit, source)}.
     """
     azure_limits: dict[str, int] = {}
@@ -152,7 +181,7 @@ async def resolve_wip_limits(
             logger.warning("Failed to fetch board WIP limits, falling back to config", exc_info=True)
 
     azure_lower = {k.lower(): v for k, v in azure_limits.items()}
-    team_wip = team_config.wip_limits or {}
+    team_wip = wip_limits_override or {}
     team_lower = {k.lower(): v for k, v in team_wip.items()}
 
     result: dict[str, tuple[int, str]] = {}
@@ -162,7 +191,7 @@ async def resolve_wip_limits(
         if az_val > 0:
             result[state] = (az_val, "azure_devops")
         elif team_lower.get(key, 0) > 0:
-            result[state] = (team_lower[key], "team_config")
+            result[state] = (team_lower[key], "kpis_teams")
         else:
             result[state] = (fh_config.default_wip_limits.get(state, 1), "global_default")
     return result

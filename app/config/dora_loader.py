@@ -8,6 +8,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
+from app.config.team_loader import DeployFrequencyTeamConfig
+
 
 class DeployFrequencyRAG(BaseModel):
     """Higher-is-better thresholds (deploys per day)."""
@@ -26,6 +28,7 @@ class DeployFrequencyConfig(BaseModel):
     description: str = ""
     formula: str = ""
     rag: DeployFrequencyRAG
+    teams: dict[str, DeployFrequencyTeamConfig] = Field(default_factory=dict)
 
 
 class LeadTimeConfig(BaseModel):
@@ -56,3 +59,9 @@ def load_dora_config(path: str | None = None) -> DoraConfig:
     raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     root = DoraRoot.model_validate(raw)
     return root.dora
+
+
+def get_deploy_frequency_config(team_id: str, path: str | None = None) -> DeployFrequencyTeamConfig | None:
+    """Get per-team deploy frequency config from dora.yaml. Returns None if team not found."""
+    config = load_dora_config(path)
+    return config.deploy_frequency.teams.get(team_id.strip())

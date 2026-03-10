@@ -9,8 +9,10 @@ from collections import defaultdict
 from app.config.kpi_loader import (
     DeliveryPredictabilityConfig,
     FlowHygieneConfig,
+    InitiativeDeliveryConfig,
     ReworkRateConfig,
     TechDebtRatioConfig,
+    TeamKPIOverrides,
     WIPDisciplineConfig,
 )
 from app.config.team_loader import TeamConfig
@@ -18,6 +20,7 @@ from app.schemas.kpi import (
     AverageKPI,
     DeliveryPredictabilityKPI,
     FlowHygieneKPI,
+    InitiativeDeliveryKPI,
     PersonStatusBreakdown,
     PersonWIPMetric,
     PersonWorkItem,
@@ -477,13 +480,81 @@ def compute_tech_debt_ratio(
 
 
 # ---------------------------------------------------------------------------
+# Initiative Delivery (Delivery of Specific Initiatives)
+# ---------------------------------------------------------------------------
+
+def compute_initiative_delivery(
+    deliverables: list[DeliverableRow],
+    config: InitiativeDeliveryConfig,
+    team_config: TeamConfig,
+    initiative_ids: list[int],
+    start: date,
+    end: date,
+) -> InitiativeDeliveryKPI:
+    """Compute initiative delivery: % of deliverables (under initiative epics/features) committed that were delivered.
+
+    Counts deliverables linked to initiative_ids (parent_epic or parent_feature).
+    Committed = deliverable was spillover or started in period.
+    Delivered = deliverable reached canonical Delivered status.
+    initiative_ids: parent work item IDs to track; empty = count nothing (0 committed, 0 delivered).
+    """
+    if not initiative_ids:
+        return InitiativeDeliveryKPI(
+            value=0.0,
+            display="0.0%",
+            rag=_rag_higher_is_better(0.0, config),
+            initiatives_committed=0,
+            initiatives_delivered=0,
+            thresholds={
+                "green": f">= {config.rag.green_min * 100:.0f}%",
+                "amber": f"{config.rag.amber_min * 100:.0f}%-{config.rag.green_min * 100:.0f}%",
+                "red": f"< {config.rag.amber_min * 100:.0f}%",
+            },
+        )
+    delivered_canonical = config.delivered_canonical_status
+    ids_filter = frozenset(initiative_ids)
+
+    committed = committed_items(deliverables, start, end)
+    committed_ids = frozenset(d.id for d in committed)
+
+    def _under_initiative(d: DeliverableRow) -> bool:
+        if d.parent_epic and d.parent_epic.id in ids_filter:
+            return True
+        if d.parent_feature and d.parent_feature.id in ids_filter:
+            return True
+        return False
+
+    in_scope = [d for d in deliverables if _under_initiative(d)]
+    committed_count = sum(1 for d in in_scope if d.id in committed_ids)
+    delivered_count = sum(
+        1 for d in in_scope
+        if (d.canonical_status or "").strip() == delivered_canonical
+    )
+    value = delivered_count / committed_count if committed_count > 0 else 0.0
+    rag = _rag_higher_is_better(value, config)
+
+    return InitiativeDeliveryKPI(
+        value=round(value, 4),
+        display=f"{value * 100:.1f}%",
+        rag=rag,
+        initiatives_committed=committed_count,
+        initiatives_delivered=delivered_count,
+        thresholds={
+            "green": f">= {config.rag.green_min * 100:.0f}%",
+            "amber": f"{config.rag.amber_min * 100:.0f}%-{config.rag.green_min * 100:.0f}%",
+            "red": f"< {config.rag.amber_min * 100:.0f}%",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cross-team average
 # ---------------------------------------------------------------------------
 
 def compute_kpi_average(
     kpi_name: str,
     team_kpis: list,
-    config: ReworkRateConfig | DeliveryPredictabilityConfig | FlowHygieneConfig | WIPDisciplineConfig | TechDebtRatioConfig,
+    config: ReworkRateConfig | DeliveryPredictabilityConfig | FlowHygieneConfig | WIPDisciplineConfig | TechDebtRatioConfig | InitiativeDeliveryConfig,
 ) -> AverageKPI:
     if not team_kpis:
         return AverageKPI(
@@ -497,7 +568,7 @@ def compute_kpi_average(
 
     if isinstance(config, TechDebtRatioConfig):
         rag = _rag_band(avg, config)
-    elif isinstance(config, (DeliveryPredictabilityConfig, WIPDisciplineConfig)):
+    elif isinstance(config, (DeliveryPredictabilityConfig, WIPDisciplineConfig, InitiativeDeliveryConfig)):
         rag = _rag_higher_is_better(avg, config)
     elif isinstance(config, FlowHygieneConfig):
         rag = _rag_flow_hygiene(avg, config)
@@ -505,12 +576,21 @@ def compute_kpi_average(
         rag = _rag_lower_is_better(avg, config)
 
     display = f"{avg:.2f}" if isinstance(config, FlowHygieneConfig) else f"{avg * 100:.1f}%"
+    extra: dict = {}
+    if isinstance(config, InitiativeDeliveryConfig) and team_kpis:
+        extra["initiatives_committed"] = sum(
+            getattr(k, "initiatives_committed", 0) or 0 for k in team_kpis
+        )
+        extra["initiatives_delivered"] = sum(
+            getattr(k, "initiatives_delivered", 0) or 0 for k in team_kpis
+        )
     return AverageKPI(
         name=kpi_name,
         value=round(avg, 4),
         display=display,
         rag=rag,
         team_count=len(team_kpis),
+        **extra,
     )
 
 
@@ -538,7 +618,11 @@ TD_METRICS = frozenset({
     "tech_debt_deployed", "non_tech_debt_deployed",
 })
 
-VALID_DRILLDOWN_METRICS = REWORK_METRICS | DP_METRICS | FH_METRICS | WD_METRICS | TD_METRICS
+ID_METRICS = frozenset({
+    "initiatives_committed", "initiatives_delivered",
+})
+
+VALID_DRILLDOWN_METRICS = REWORK_METRICS | DP_METRICS | FH_METRICS | WD_METRICS | TD_METRICS | ID_METRICS
 
 
 def filter_deliverables_by_metric(
@@ -549,6 +633,8 @@ def filter_deliverables_by_metric(
     fh_config: FlowHygieneConfig | None = None,
     wd_config: WIPDisciplineConfig | None = None,
     td_config: TechDebtRatioConfig | None = None,
+    id_config: InitiativeDeliveryConfig | None = None,
+    id_overrides: TeamKPIOverrides | None = None,
     team_config: TeamConfig | None = None,
     start: date | None = None,
     end: date | None = None,
@@ -637,5 +723,32 @@ def filter_deliverables_by_metric(
             return [d for d in deployed if d.is_technical_debt]
         if metric == "non_tech_debt_deployed":
             return [d for d in deployed if not d.is_technical_debt]
+
+    if metric in ID_METRICS:
+        if id_config is None or team_config is None or id_overrides is None or start is None or end is None:
+            raise ValueError(
+                "id_config, team_config, id_overrides, start, and end required for initiative delivery metrics"
+            )
+        if not id_overrides.initiative_ids:
+            return []
+        ids_filter = frozenset(id_overrides.initiative_ids)
+        delivered_canonical = id_config.delivered_canonical_status
+        committed = _committed_items(deliverables, start, end)
+        committed_ids = frozenset(d.id for d in committed)
+
+        def _under_initiative(d: DeliverableRow) -> bool:
+            if d.parent_epic and d.parent_epic.id in ids_filter:
+                return True
+            if d.parent_feature and d.parent_feature.id in ids_filter:
+                return True
+            return False
+
+        in_scope = [d for d in deliverables if _under_initiative(d)]
+        if metric == "initiatives_committed":
+            return [d for d in in_scope if d.id in committed_ids]
+        return [
+            d for d in in_scope
+            if (d.canonical_status or "").strip() == delivered_canonical
+        ]
 
     return []

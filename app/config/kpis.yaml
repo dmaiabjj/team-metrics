@@ -64,3 +64,44 @@ kpis:
       amber_min: 0.10
       green_min: 0.20
       green_max: 0.30
+
+  initiative_delivery:
+    enabled: true
+    description: "Percentage of initiatives (Epics/Features) committed that were delivered"
+    formula: "initiatives_delivered / initiatives_committed"
+    delivered_canonical_status: "Delivered"
+    rag:
+      green_min: 0.85
+      amber_min: 0.70
+
+  teams:
+    game-services:
+      tech_debt_epic_ids: []
+      post_mortem_epic_ids: []
+      post_mortem_sla_weeks: 8
+      wip_limits: {}
+      initiative_ids: [3320,3419]
+    domain-tooling-services:
+      tech_debt_epic_ids: []
+      post_mortem_epic_ids: []
+      post_mortem_sla_weeks: 8
+      wip_limits: {}
+      initiative_ids: []
+    payment-services:
+      tech_debt_epic_ids: []
+      post_mortem_epic_ids: []
+      post_mortem_sla_weeks: 8
+      wip_limits: {}
+      initiative_ids: []
+    player-engagement-services:
+      tech_debt_epic_ids: []
+      post_mortem_epic_ids: []
+      post_mortem_sla_weeks: 8
+      wip_limits: {}
+      initiative_ids: []
+    rules-engine:
+      tech_debt_epic_ids: []
+      post_mortem_epic_ids: []
+      post_mortem_sla_weeks: 8
+      wip_limits: {}
+      initiative_ids: []

@@ -2,9 +2,6 @@ teams:
   game-services:
     project: "game-services"
     azure_team: "game-services Team"
-    deploy_frequency:
-      environment_name: "Coreflex PROD"
-      definition_ids: [208, 210, 250, 272]
     area_paths:
       - "game-services"
       - "game-services\\Game Proxy Development"
@@ -18,12 +15,6 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
-    tech_debt_epic_ids: []
-    post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 8
-    board_name: "Stories"
-    wip_limits:
-
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -49,11 +40,6 @@ teams:
   domain-tooling-services:
     project: "domain-tooling-services"
     azure_team: "domain-tooling-services Team"
-    deploy_frequency:
-      environment_guid: "de00afe2-3b4b-5d17-8d57-d20dedd3fa47"
-      environment_project: "coreflex"
-      environment_name: "Coreflex PROD"
-      definition_ids: [269, 321, 263, 235]
     area_paths:
       - "domain-tooling-services"
       - "domain-tooling-services\\BackOffice Team"
@@ -66,12 +52,6 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
-    tech_debt_epic_ids: []
-    post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 8
-    board_name: "Stories"
-    wip_limits:
-
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -97,9 +77,6 @@ teams:
   payment-services:
     project: "payment-services"
     azure_team: "payment-services Team"
-    deploy_frequency:
-      environment_name: "Coreflex PROD"
-      definition_ids: [352, 346, 345, 343, 337, 329, 328, 350, 348, 339, 338, 341]
     area_paths:
       - "payment-services"
       - "payment-services\\backend"
@@ -121,12 +98,6 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
-    tech_debt_epic_ids: []
-    post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 8
-    board_name: "Stories"
-    wip_limits:
-
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -152,9 +123,6 @@ teams:
   player-engagement-services:
     project: "player-engagement-services"
     azure_team: "Bonus Engine Team"
-    deploy_frequency:
-      environment_name: "Coreflex PROD"
-      definition_ids: [156, 380, 180, 212, 174, 202]
     area_paths:
       - "player-engagement-services"
       - "player-engagement-services\\Data Analytics"
@@ -168,12 +136,6 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
-    tech_debt_epic_ids: []
-    post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 8
-    board_name: "Stories"
-    wip_limits:
-
     states:
       - canonical_status: "Development Active"
         real_states:
@@ -199,9 +161,6 @@ teams:
   rules-engine:
     project: "rules-engine"
     azure_team: "Rules Engine Developers"
-    deploy_frequency:
-      environment_name: "Coreflex PROD"
-      definition_ids: [198, 197, 199]
     area_paths:
       - "rules-engine"
     deliverable_types:
@@ -213,12 +172,6 @@ teams:
       - "Feature"
     bug_types:
       - "Bug"
-    tech_debt_epic_ids: []
-    post_mortem_epic_ids: []
-    post_mortem_sla_weeks: 8
-    board_name: "Stories"
-    wip_limits:
-
     states:
       - canonical_status: "Development Active"
         real_states:

@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.cache import ReportCache, WorkItemCache
+from app.config.kpi_loader import get_team_kpi_overrides
 from app.config.team_loader import TeamConfig, get_team_config, load_teams_config
 from app.schemas.report import BounceDetail, DeliverableRow, ReportResponse, StatusTimelineEntry, WorkItemRef
 from app.settings import get_settings
@@ -581,6 +582,7 @@ async def run_report(
             team_id=team_id, start_date=start_date, end_date=end_date, deliverables=[]
         )
 
+    kpi_overrides = get_team_kpi_overrides(team_id)
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
     real_to_canonical = team.real_state_to_canonical()
@@ -693,18 +695,18 @@ async def run_report(
 
         parent_epic_id = epic_ref.id if epic_ref else None
         is_technical_debt = (
-            parent_epic_id is not None and parent_epic_id in team.tech_debt_epic_ids
+            parent_epic_id is not None and parent_epic_id in kpi_overrides.tech_debt_epic_ids
         )
         is_post_mortem = (
-            parent_epic_id is not None and parent_epic_id in team.post_mortem_epic_ids
+            parent_epic_id is not None and parent_epic_id in kpi_overrides.post_mortem_epic_ids
         )
 
         lifecycle = _compute_lifecycle_dates(revs, real_to_canonical)
 
         post_mortem_sla_met: bool | None = None
-        if is_post_mortem and team.post_mortem_sla_weeks is not None:
+        if is_post_mortem and kpi_overrides.post_mortem_sla_weeks is not None:
             if lifecycle.delivery_days is not None:
-                sla_days = team.post_mortem_sla_weeks * 7
+                sla_days = kpi_overrides.post_mortem_sla_weeks * 7
                 post_mortem_sla_met = lifecycle.delivery_days <= sla_days
             else:
                 post_mortem_sla_met = False

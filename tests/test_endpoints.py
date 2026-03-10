@@ -161,6 +161,13 @@ class TestTeamKPIDetail:
         })
         assert r.status_code == 503
 
+    def test_no_azure_client_initiative_delivery(self, client):
+        r = client.get("/teams/game-services/kpis/initiative-delivery", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
     def test_no_azure_client_deploy_frequency(self, client):
         r = client.get("/teams/game-services/kpis/deploy-frequency", params={
             "start_date": "2025-01-01",
@@ -309,6 +316,14 @@ class TestDrilldown:
     def test_valid_td_metric_non_tech_debt_deployed(self, client):
         """non_tech_debt_deployed is a valid TD metric."""
         r = client.get("/teams/game-services/kpis/tech-debt-ratio/drilldown/non_tech_debt_deployed", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_valid_id_metric_initiatives_committed(self, client):
+        """initiatives_committed is a valid initiative-delivery metric."""
+        r = client.get("/teams/game-services/kpis/initiative-delivery/drilldown/initiatives_committed", params={
             "start_date": "2025-01-01",
             "end_date": "2025-01-31",
         })
@@ -516,6 +531,8 @@ class TestCacheEndpoints:
         data = r.json()
         assert data["report_cache_entries"] == 0
         assert data["work_item_cache_entries"] == 0
+        assert data["azure_cache_entries"] == 0
+        assert data["deployment_cache_entries"] == 0
 
     def test_cache_invalidate_all(self, client):
         r = client.delete("/cache")
@@ -524,6 +541,7 @@ class TestCacheEndpoints:
         assert "cleared" in data
         assert data["cleared"]["reports"] == 0
         assert data["cleared"]["work_items"] == 0
+        assert data["cleared"]["azure"] == 0
 
     def test_cache_invalidate_team(self, client):
         r = client.delete("/cache/game-services")
@@ -531,3 +549,4 @@ class TestCacheEndpoints:
         data = r.json()
         assert data["team_id"] == "game-services"
         assert data["cleared"]["reports"] == 0
+        assert data["cleared"]["deployments"] == 0

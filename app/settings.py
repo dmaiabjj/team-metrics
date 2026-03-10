@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     report_cache_max: int = 256
     wi_cache_max: int = 4096
     cache_ttl_seconds: int = 0  # 0 = no TTL (infinite); set e.g. 3600 for 1 hour
+    azure_cache_max: int = 2048  # Azure API response cache
+    azure_cache_ttl_seconds: int = 300  # 5 min default for Azure responses
+    deployment_cache_max: int = 512  # DORA deployment cache
+    deployment_cache_ttl_seconds: int = 3600  # 1 hour for historical deployment data
 
     # Request timeout (overall report generation)
     report_timeout: float = 300.0  # seconds

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 from datetime import date, datetime, timedelta
-
 import httpx
+
+from app.cache import AzureResponseCache
 from tenacity import (
     RetryCallState,
     retry,
@@ -16,6 +19,17 @@ from tenacity import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _cache_key(*parts: object) -> str:
+    """Build a deterministic cache key from parts."""
+    return ":".join(str(p) for p in parts)
+
+
+def _cache_key_hash(*parts: object) -> str:
+    """Build a short hash for complex key parts."""
+    payload = json.dumps(parts, sort_keys=True, default=str)
+    return hashlib.md5(payload.encode()).hexdigest()
 
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -61,12 +75,19 @@ class AzureDevOpsClient:
     Accepts a shared httpx.AsyncClient for connection pooling across requests.
     """
 
-    def __init__(self, org: str, pat: str, http_client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        org: str,
+        pat: str,
+        http_client: httpx.AsyncClient | None = None,
+        azure_cache: AzureResponseCache | None = None,
+    ):
         self.org = _normalize_org(org)
         self.pat = pat
         self._base = f"https://dev.azure.com/{self.org}"
         self._auth = ("", pat)
         self._owns_client = http_client is None
+        self._cache = azure_cache
         self._client = http_client or httpx.AsyncClient(
             timeout=60.0,
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
@@ -79,6 +100,11 @@ class AzureDevOpsClient:
 
     async def health_check(self) -> bool:
         """Verify connectivity to Azure DevOps by listing one project."""
+        key = "health:projects"
+        if self._cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return True
         url = f"{self._base}/_apis/projects"
         r = await self._client.get(
             url,
@@ -87,6 +113,8 @@ class AzureDevOpsClient:
             headers=self._headers(),
         )
         r.raise_for_status()
+        if self._cache:
+            self._cache.put(key, True)
         return True
 
     def _headers(self) -> dict[str, str]:
@@ -132,6 +160,12 @@ class AzureDevOpsClient:
         if changed_since is not None:
             wiql += f" AND [System.ChangedDate] >= '{changed_since.isoformat()}'"
 
+        key = _cache_key("wiql", project, _cache_key_hash(area_paths, deliverable_types, changed_since))
+        if self._cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
+
         url = f"{self._base}/{project}/_apis/wit/wiql"
         params: dict[str, str] = {"api-version": "7.1"}
         if top:
@@ -148,8 +182,11 @@ class AzureDevOpsClient:
         r.raise_for_status()
         data = r.json()
         work_items = data.get("workItems") or []
-        logger.info("WIQL returned %d candidates for project=%s", len(work_items), project)
-        return [wi["id"] for wi in work_items]
+        result = [wi["id"] for wi in work_items]
+        if self._cache:
+            self._cache.put(key, result)
+        logger.info("WIQL returned %d candidates for project=%s", len(result), project)
+        return result
 
     @retry(
         retry=retry_if_exception(_is_retryable),
@@ -159,6 +196,11 @@ class AzureDevOpsClient:
     )
     async def get_revisions(self, project: str, work_item_id: int) -> list[dict]:
         """Get all revisions for a work item."""
+        key = _cache_key("rev", project, work_item_id)
+        if self._cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
         url = f"{self._base}/{project}/_apis/wit/workItems/{work_item_id}/revisions"
         r = await self._client.get(
             url,
@@ -168,7 +210,10 @@ class AzureDevOpsClient:
         )
         r.raise_for_status()
         data = r.json()
-        return data.get("value") or []
+        result = data.get("value") or []
+        if self._cache:
+            self._cache.put(key, result)
+        return result
 
     @retry(
         retry=retry_if_exception(_is_retryable),
@@ -184,6 +229,11 @@ class AzureDevOpsClient:
         expand: str = "Relations",
     ) -> dict | None:
         """Get a single work item with relations."""
+        key = _cache_key("wi", project, work_item_id, expand)
+        if self._cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return None if cached == "__none__" else cached
         url = f"{self._base}/{project}/_apis/wit/workItems/{work_item_id}"
         r = await self._client.get(
             url,
@@ -192,9 +242,14 @@ class AzureDevOpsClient:
             headers=self._headers(),
         )
         if r.status_code == 404:
+            if self._cache:
+                self._cache.put(key, "__none__")
             return None
         r.raise_for_status()
-        return r.json()
+        result = r.json()
+        if self._cache:
+            self._cache.put(key, result)
+        return result
 
     @retry(
         retry=retry_if_exception(_is_retryable),
@@ -210,6 +265,13 @@ class AzureDevOpsClient:
         fields: list[str] | None,
     ) -> list[dict]:
         """Fetch a single chunk (max 200) of work items."""
+        ids_tuple = tuple(sorted(ids))
+        fields_str = ",".join(sorted(fields)) if fields else ""
+        key = _cache_key("batch", project, ids_tuple, expand, fields_str)
+        if self._cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
         url = f"{self._base}/{project}/_apis/wit/workitemsbatch"
         body: dict = {"ids": ids, "$expand": expand}
         if fields:
@@ -223,7 +285,10 @@ class AzureDevOpsClient:
         )
         r.raise_for_status()
         data = r.json()
-        return data.get("value") or []
+        result = data.get("value") or []
+        if self._cache:
+            self._cache.put(key, result)
+        return result
 
     async def get_work_items_batch(
         self,
@@ -266,6 +331,11 @@ class AzureDevOpsClient:
         default team convention.
         """
         team = team or f"{project} Team"
+        key = _cache_key("board", project, board, team)
+        if self._cache:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
         url = f"{self._base}/{project}/{team}/_apis/work/boards/{board}"
         try:
             r = await self._client.get(
@@ -291,6 +361,8 @@ class AzureDevOpsClient:
             for state in (col.get("stateMappings") or {}).values():
                 if state and state not in limits:
                     limits[state] = item_limit
+        if self._cache:
+            self._cache.put(key, limits)
         logger.info(
             "Board WIP limits for project=%s board=%s: %s", project, board, limits,
         )
@@ -390,8 +462,8 @@ class AzureDevOpsClient:
         buffer = timedelta(days=14)
         query_min = min_started_time - buffer
         query_max = max_started_time + buffer
-        min_iso = query_min.isoformat()
-        max_iso = query_max.isoformat()
+        query_min_iso = query_min.isoformat()
+        query_max_iso = query_max.isoformat()
         stage_name_lower = (stage_name or "").strip().lower()
 
         deployments: list[dict] = []
@@ -403,8 +475,8 @@ class AzureDevOpsClient:
                 params: dict[str, str | int] = {
                     "api-version": "7.0",
                     "definitions": definition_id,
-                    "minTime": min_iso,
-                    "maxTime": max_iso,
+                    "minTime": query_min_iso,
+                    "maxTime": query_max_iso,
                     "resultFilter": "succeeded",
                     "statusFilter": "completed",
                     "$top": 500,
@@ -412,44 +484,72 @@ class AzureDevOpsClient:
                 }
                 if continuation_token:
                     params["continuationToken"] = continuation_token
-                try:
-                    r = await self._client.get(
-                        base_builds,
-                        params=params,
-                        auth=self._auth,
-                        headers=self._headers(),
-                    )
-                    r.raise_for_status()
-                except Exception:
-                    logger.warning(
-                        "Could not fetch builds for definition=%s",
-                        definition_id, exc_info=True,
-                    )
-                    break
-                builds = r.json().get("value") or []
-                continuation_token = (
-                    r.headers.get("x-ms-continuationtoken")
-                    or r.headers.get("X-MS-ContinuationToken")
+                builds_key = _cache_key(
+                    "builds", project, definition_id, query_min_iso, query_max_iso,
+                    continuation_token or "",
                 )
+                if self._cache:
+                    cached = self._cache.get(builds_key)
+                    if cached is not None:
+                        builds = cached.get("value") or []
+                        continuation_token = cached.get("x-ms-continuationtoken")
+                    else:
+                        builds = None
+                else:
+                    builds = None
+                if builds is None:
+                    try:
+                        r = await self._client.get(
+                            base_builds,
+                            params=params,
+                            auth=self._auth,
+                            headers=self._headers(),
+                        )
+                        r.raise_for_status()
+                    except Exception:
+                        logger.warning(
+                            "Could not fetch builds for definition=%s",
+                            definition_id, exc_info=True,
+                        )
+                        break
+                    data = r.json()
+                    builds = data.get("value") or []
+                    continuation_token = (
+                        r.headers.get("x-ms-continuationtoken")
+                        or r.headers.get("X-MS-ContinuationToken")
+                    )
+                    if self._cache:
+                        self._cache.put(builds_key, {
+                            "value": builds,
+                            "x-ms-continuationtoken": continuation_token,
+                        })
                 for build in builds:
                     build_id = build.get("id")
                     if build_id is None:
                         continue
-                    try:
-                        tl_r = await self._client.get(
-                            f"{base_builds}/{build_id}/timeline",
-                            params={"api-version": "6.0"},
-                            auth=self._auth,
-                            headers=self._headers(),
-                        )
-                        tl_r.raise_for_status()
-                    except Exception:
-                        logger.warning(
-                            "Could not fetch timeline for build=%s",
-                            build_id, exc_info=True,
-                        )
-                        continue
-                    tl_data = tl_r.json()
+                    tl_key = _cache_key("timeline", project, build_id)
+                    if self._cache:
+                        tl_data = self._cache.get(tl_key)
+                    else:
+                        tl_data = None
+                    if tl_data is None:
+                        try:
+                            tl_r = await self._client.get(
+                                f"{base_builds}/{build_id}/timeline",
+                                params={"api-version": "6.0"},
+                                auth=self._auth,
+                                headers=self._headers(),
+                            )
+                            tl_r.raise_for_status()
+                            tl_data = tl_r.json()
+                            if self._cache:
+                                self._cache.put(tl_key, tl_data)
+                        except Exception:
+                            logger.warning(
+                                "Could not fetch timeline for build=%s",
+                                build_id, exc_info=True,
+                            )
+                            continue
                     records = tl_data.get("records") or []
                     for rec in records:
                         if rec.get("type") != "Stage":
@@ -472,10 +572,10 @@ class AzureDevOpsClient:
                             except (ValueError, TypeError):
                                 pass
                         rec_id = (rec.get("id") or "").strip().lower()
-                        key = (build_id, rec_id or str(rec.get("id", "")))
-                        if key in seen:
+                        seen_key = (build_id, rec_id or str(rec.get("id", "")))
+                        if seen_key in seen:
                             continue
-                        seen.add(key)
+                        seen.add(seen_key)
                         deployments.append({
                             "buildId": build_id,
                             "definitionId": definition_id,

@@ -1,8 +1,8 @@
-"""Tests for the in-memory cache layer (L1 report + L2 work-item)."""
+"""Tests for the in-memory cache layer (L1 report + L2 work-item + Azure API)."""
 
 from datetime import date
 
-from app.cache import ReportCache, WorkItemCache
+from app.cache import AzureResponseCache, DeploymentCache, ReportCache, WorkItemCache
 from app.schemas.report import ReportResponse
 
 
@@ -151,3 +151,100 @@ class TestWorkItemCache:
         assert cache.get("proj", 1) is None
         assert cache.get("proj", 2) is not None
         assert cache.get("proj", 3) is not None
+
+
+# ---------------------------------------------------------------------------
+# AzureResponseCache
+# ---------------------------------------------------------------------------
+
+class TestAzureResponseCache:
+    def test_miss_returns_none(self):
+        cache = AzureResponseCache()
+        assert cache.get("wiql:proj:abc123") is None
+
+    def test_put_then_hit(self):
+        cache = AzureResponseCache()
+        data = [1, 2, 3]
+        cache.put("wiql:proj:abc", data)
+        assert cache.get("wiql:proj:abc") == data
+
+    def test_different_key_is_miss(self):
+        cache = AzureResponseCache()
+        cache.put("rev:proj:42", [{"id": 1}])
+        assert cache.get("rev:proj:43") is None
+        assert cache.get("wi:proj:42") is None
+
+    def test_invalidate_all(self):
+        cache = AzureResponseCache()
+        cache.put("rev:proj:1", [])
+        cache.put("rev:proj:2", [])
+        assert cache.size == 2
+        cleared = cache.invalidate()
+        assert cleared == 2
+        assert cache.size == 0
+        assert cache.get("rev:proj:1") is None
+
+    def test_invalidate_by_prefix(self):
+        cache = AzureResponseCache()
+        cache.put("rev:proj:1", [])
+        cache.put("rev:proj:2", [])
+        cache.put("wiql:proj:x", [1, 2])
+        assert cache.size == 3
+        cleared = cache.invalidate(prefix="rev:")
+        assert cleared == 2
+        assert cache.size == 1
+        assert cache.get("rev:proj:1") is None
+        assert cache.get("wiql:proj:x") == [1, 2]
+
+    def test_size_property(self):
+        cache = AzureResponseCache()
+        assert cache.size == 0
+        cache.put("key1", {"a": 1})
+        assert cache.size == 1
+
+    def test_lru_eviction(self):
+        cache = AzureResponseCache(maxsize=2)
+        cache.put("k1", 1)
+        cache.put("k2", 2)
+        cache.put("k3", 3)
+        assert cache.size == 2
+        assert cache.get("k1") is None
+        assert cache.get("k2") == 2
+        assert cache.get("k3") == 3
+
+
+# ---------------------------------------------------------------------------
+# DeploymentCache
+# ---------------------------------------------------------------------------
+
+class TestDeploymentCache:
+    def test_miss_returns_none(self):
+        cache = DeploymentCache()
+        assert cache.get("t1", date(2025, 1, 1), date(2025, 1, 31)) is None
+
+    def test_put_then_hit(self):
+        cache = DeploymentCache()
+        deployments = [{"id": 1, "startTime": "2025-01-15T10:00:00Z"}]
+        cache.put("t1", date(2025, 1, 1), date(2025, 1, 31), deployments, "release")
+        result = cache.get("t1", date(2025, 1, 1), date(2025, 1, 31))
+        assert result is not None
+        assert result[0] == deployments
+        assert result[1] == "release"
+
+    def test_invalidate_all(self):
+        cache = DeploymentCache()
+        cache.put("t1", date(2025, 1, 1), date(2025, 1, 31), [], "release")
+        cache.put("t2", date(2025, 1, 1), date(2025, 1, 31), [], "build")
+        assert cache.size == 2
+        cleared = cache.invalidate()
+        assert cleared == 2
+        assert cache.get("t1", date(2025, 1, 1), date(2025, 1, 31)) is None
+
+    def test_invalidate_by_team(self):
+        cache = DeploymentCache()
+        cache.put("t1", date(2025, 1, 1), date(2025, 1, 31), [], "release")
+        cache.put("t2", date(2025, 1, 1), date(2025, 1, 31), [], "release")
+        cleared = cache.invalidate("t1")
+        assert cleared == 1
+        assert cache.get("t1", date(2025, 1, 1), date(2025, 1, 31)) is None
+        assert cache.get("t2", date(2025, 1, 1), date(2025, 1, 31)) is not None

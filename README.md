@@ -130,7 +130,8 @@ GET /dashboard?start_date=2025-01-01&end_date=2025-01-31
   "kpis": [
     {"name": "rework_rate", "value": 0.08, "display": "8.0%", "rag": "green", "team_count": 5},
     {"name": "delivery_predictability", "value": 0.87, "display": "87.0%", "rag": "green", "team_count": 5},
-    {"name": "flow_hygiene", "value": 0.67, "display": "0.67", "rag": "green", "team_count": 5}
+    {"name": "flow_hygiene", "value": 0.67, "display": "0.67", "rag": "green", "team_count": 5},
+    {"name": "initiative_delivery", "value": 0.85, "display": "85.0%", "rag": "green", "team_count": 5, "initiatives_committed": 12, "initiatives_delivered": 10}
   ],
   "dora": [
     {"name": "deploy_frequency", "value": 1.2, "display": "1.2 deploys/day", "rag": "green", "team_count": 5},
@@ -205,11 +206,13 @@ GET /teams/{team_id}/dora/deploy-frequency/drilldown/deployments?start_date=...&
 GET /teams/{team_id}/dora/lead-time/drilldown/measured_items?start_date=...&end_date=...&skip=0&limit=100
 ```
 
+
 | Parameter    | Type | Required | Description                      |
 | ------------ | ---- | -------- | -------------------------------- |
 | `team_id`    | path | Yes      | Team slug (e.g. `game-services`) |
 | `start_date` | date | Yes      | Start of period (ISO)            |
 | `end_date`   | date | Yes      | End of period (ISO)              |
+
 
 **Response** `200 OK` (GET /teams/{team_id}/dora)
 
@@ -235,12 +238,14 @@ Single KPI with its breakdown metrics and all involved work items for one team.
 GET /teams/{team_id}/kpis/{kpi_name}?start_date=2025-01-01&end_date=2025-01-31
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `team_id` | path | Yes | Team slug |
-| `kpi_name` | path | Yes | `rework-rate`, `delivery-predictability`, `flow-hygiene`, `wip-discipline`, `tech-debt-ratio`, `deploy-frequency`, or `lead-time` |
-| `start_date` | date | Yes | Start of period (ISO) |
-| `end_date` | date | Yes | End of period (ISO) |
+
+| Parameter    | Type | Required | Description                                                                                                                       |
+| ------------ | ---- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `team_id`    | path | Yes      | Team slug                                                                                                                         |
+| `kpi_name`   | path | Yes      | `rework-rate`, `delivery-predictability`, `flow-hygiene`, `wip-discipline`, `tech-debt-ratio`, `deploy-frequency`, or `lead-time` |
+| `start_date` | date | Yes      | Start of period (ISO)                                                                                                             |
+| `end_date`   | date | Yes      | End of period (ISO)                                                                                                               |
+
 
 **Response** `200 OK` (example: rework-rate)
 
@@ -281,16 +286,16 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 ```
 
 
-| Parameter    | Type | Required | Description                                |
-| ------------ | ---- | -------- | ------------------------------------------ |
-| `team_id`    | path | Yes      | Team slug                                  |
+| Parameter    | Type | Required | Description                                                                                      |
+| ------------ | ---- | -------- | ------------------------------------------------------------------------------------------------ |
+| `team_id`    | path | Yes      | Team slug                                                                                        |
 | `kpi_name`   | path | Yes      | `rework-rate`, `delivery-predictability`, `flow-hygiene`, `wip-discipline`, or `tech-debt-ratio` |
-| `metric`     | path | Yes      | Metric to drill into (see table below)     |
-| `start_date` | date | Yes      | Start of period (ISO)                      |
-| `end_date`   | date | Yes      | End of period (ISO)                        |
-| `person`     | str  | No       | Filter to a specific person (WIP discipline only) |
-| `skip`       | int  | No       | Pagination offset (default 0)              |
-| `limit`      | int  | No       | Max items (default 100, max 500)           |
+| `metric`     | path | Yes      | Metric to drill into (see table below)                                                           |
+| `start_date` | date | Yes      | Start of period (ISO)                                                                            |
+| `end_date`   | date | Yes      | End of period (ISO)                                                                              |
+| `person`     | str  | No       | Filter to a specific person (WIP discipline only)                                                |
+| `skip`       | int  | No       | Pagination offset (default 0)                                                                    |
+| `limit`      | int  | No       | Max items (default 100, max 500)                                                                 |
 
 
 **Available metrics per KPI:**
@@ -301,7 +306,7 @@ GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}?start_date=2025-01-01&en
 | `rework-rate`             | `items_reached_qa`, `items_with_rework`, `items_bounced_back`, `items_with_bugs`  |
 | `delivery-predictability` | `items_committed`, `items_deployed`, `items_started_in_period`, `items_spillover` |
 | `flow-hygiene`            | `items_in_queue`                                                                  |
-| `wip-discipline`          | `developers`, `qas`, `compliant_gte_80`, `over_wip_limit`                        |
+| `wip-discipline`          | `developers`, `qas`, `compliant_gte_80`, `over_wip_limit`                         |
 | `tech-debt-ratio`         | `tech_debt_deployed`, `non_tech_debt_deployed`                                    |
 
 
@@ -331,14 +336,16 @@ Work items behind a delivery snapshot metric. Supports `skip`/`limit` pagination
 GET /teams/{team_id}/delivery-snapshot/{metric}?start_date=2025-01-01&end_date=2025-01-31
 ```
 
-| Parameter    | Type | Required | Description                                |
-| ------------ | ---- | -------- | ------------------------------------------ |
-| `team_id`    | path | Yes      | Team slug                                  |
+
+| Parameter    | Type | Required | Description                                                                                            |
+| ------------ | ---- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `team_id`    | path | Yes      | Team slug                                                                                              |
 | `metric`     | path | Yes      | `delivered`, `committed`, `committed_in_period`, `spillovers`, `rework_items`, `tech_debts`, or `bugs` |
-| `start_date` | date | Yes      | Start of period (ISO)                      |
-| `end_date`   | date | Yes      | End of period (ISO)                        |
-| `skip`       | int  | No       | Pagination offset (default 0)              |
-| `limit`      | int  | No       | Max items (default 100, max 500)           |
+| `start_date` | date | Yes      | Start of period (ISO)                                                                                  |
+| `end_date`   | date | Yes      | End of period (ISO)                                                                                    |
+| `skip`       | int  | No       | Pagination offset (default 0)                                                                          |
+| `limit`      | int  | No       | Max items (default 100, max 500)                                                                       |
+
 
 **Response** `200 OK`
 
@@ -508,12 +515,14 @@ post_mortem_sla_weeks: 2
 
 ## Cache Management
 
-The API includes an in-memory two-layer cache to reduce Azure DevOps API calls:
+The API includes an in-memory four-layer cache to reduce Azure DevOps API calls:
 
 - **L1 (Report cache):** Caches full report responses keyed by `(team_id, start_date, end_date)`. Repeated identical queries return instantly.
 - **L2 (Work-item cache):** Caches individual work-item lookups used during parent/child resolution. Shared across all report requests.
+- **L3 (Deployment cache):** Caches deployment data for DORA deploy frequency, keyed by `(team_id, start_date, end_date)`. Default TTL 1 hour for historical data.
+- **Azure API cache:** Caches raw Azure DevOps API responses (WIQL, revisions, work items, board WIP limits). Deployment APIs are not cached here; use L3 instead. Default TTL 5 minutes.
 
-Both layers persist for the lifetime of the process and are cleared on restart. Use the endpoints below for manual invalidation.
+All layers persist for the lifetime of the process and are cleared on restart. Use the endpoints below for manual invalidation.
 
 ### Invalidate all caches
 
@@ -529,7 +538,8 @@ DELETE /cache
 {
   "cleared": {
     "reports": 5,
-    "work_items": 142
+    "work_items": 142,
+    "azure": 89
   }
 }
 ```
@@ -566,7 +576,9 @@ GET /cache/stats
 ```json
 {
   "report_cache_entries": 3,
-  "work_item_cache_entries": 87
+  "work_item_cache_entries": 87,
+  "azure_cache_entries": 89,
+  "deployment_cache_entries": 12
 }
 ```
 
@@ -590,19 +602,19 @@ When `API_KEY` is empty or unset, authentication is disabled (open access).
 Endpoints are rate-limited per client IP:
 
 
-| Endpoint                                                  | Limit              |
-| --------------------------------------------------------- | ------------------ |
-| `GET /dashboard`                                          | 10 requests/minute |
-| `GET /teams/{team_id}/work-items`                         | 30 requests/minute |
-| `GET /teams/{team_id}/kpis`                               | 30 requests/minute |
-| `GET /teams/{team_id}/kpis/{kpi_name}`                    | 30 requests/minute |
-| `GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}` | 30 requests/minute |
-| `GET /teams/{team_id}/dora`                               | 30 requests/minute |
-| `GET /teams/{team_id}/dora/deploy-frequency`              | 30 requests/minute |
-| `GET /teams/{team_id}/dora/lead-time`                     | 30 requests/minute |
+| Endpoint                                                           | Limit              |
+| ------------------------------------------------------------------ | ------------------ |
+| `GET /dashboard`                                                   | 10 requests/minute |
+| `GET /teams/{team_id}/work-items`                                  | 30 requests/minute |
+| `GET /teams/{team_id}/kpis`                                        | 30 requests/minute |
+| `GET /teams/{team_id}/kpis/{kpi_name}`                             | 30 requests/minute |
+| `GET /teams/{team_id}/kpis/{kpi_name}/drilldown/{metric}`          | 30 requests/minute |
+| `GET /teams/{team_id}/dora`                                        | 30 requests/minute |
+| `GET /teams/{team_id}/dora/deploy-frequency`                       | 30 requests/minute |
+| `GET /teams/{team_id}/dora/lead-time`                              | 30 requests/minute |
 | `GET /teams/{team_id}/dora/deploy-frequency/drilldown/deployments` | 30 requests/minute |
 | `GET /teams/{team_id}/dora/lead-time/drilldown/measured_items`     | 30 requests/minute |
-| `GET /teams/{team_id}/delivery-snapshot/{metric}`         | 30 requests/minute |
+| `GET /teams/{team_id}/delivery-snapshot/{metric}`                  | 30 requests/minute |
 
 
 Exceeding the limit returns `429 Too Many Requests`.
@@ -631,19 +643,23 @@ GET /teams/game-services/work-items?start_date=2025-01-01&end_date=2025-01-31&sk
 ## Environment Variables
 
 
-| Variable               | Default | Description                                   |
-| ---------------------- | ------- | --------------------------------------------- |
-| `AZURE_DEVOPS_ORG`     |         | Azure DevOps organization name                |
-| `AZURE_DEVOPS_PAT`     |         | Personal access token                         |
-| `API_KEY`              |         | API key for authentication (empty = disabled) |
-| `LOG_LEVEL`            | `INFO`  | Logging level (DEBUG, INFO, WARNING, ERROR)   |
-| `REPORT_TIMEOUT`       | `300`   | Max seconds for report generation             |
-| `REPORT_CACHE_MAX`     | `256`   | Max L1 cache entries                          |
-| `WI_CACHE_MAX`         | `4096`  | Max L2 cache entries                          |
-| `REVISION_CONCURRENCY` | `20`    | Max parallel revision fetches                 |
-| `HTTP_TIMEOUT`         | `60`    | Seconds per HTTP request                      |
-| `HTTP_POOL_SIZE`       | `20`    | Connection pool size                          |
-| `MAX_DATE_RANGE_DAYS`  | `365`   | Max allowed date range                        |
+| Variable                  | Default | Description                                   |
+| ------------------------- | ------- | --------------------------------------------- |
+| `AZURE_DEVOPS_ORG`        |         | Azure DevOps organization name                |
+| `AZURE_DEVOPS_PAT`        |         | Personal access token                         |
+| `API_KEY`                 |         | API key for authentication (empty = disabled) |
+| `LOG_LEVEL`               | `INFO`  | Logging level (DEBUG, INFO, WARNING, ERROR)   |
+| `REPORT_TIMEOUT`          | `300`   | Max seconds for report generation             |
+| `REPORT_CACHE_MAX`        | `256`   | Max L1 cache entries                          |
+| `WI_CACHE_MAX`            | `4096`  | Max L2 cache entries                          |
+| `AZURE_CACHE_MAX`              | `2048`  | Max Azure API response cache entries          |
+| `AZURE_CACHE_TTL_SECONDS`      | `300`   | TTL for Azure cache (0 = no expiry)           |
+| `DEPLOYMENT_CACHE_MAX`         | `512`   | Max deployment cache entries                  |
+| `DEPLOYMENT_CACHE_TTL_SECONDS` | `3600`  | TTL for deployment cache (0 = no expiry)      |
+| `REVISION_CONCURRENCY`         | `20`    | Max parallel revision fetches                 |
+| `HTTP_TIMEOUT`            | `60`    | Seconds per HTTP request                      |
+| `HTTP_POOL_SIZE`          | `20`    | Connection pool size                          |
+| `MAX_DATE_RANGE_DAYS`     | `365`   | Max allowed date range                        |
 
 
 ---
@@ -751,20 +767,53 @@ tech_debt_ratio = tech_debt_deployed / total_deployed
 
 Where `total_deployed` = items with `canonical_status == "Delivered"` and `tech_debt_deployed` = subset where `is_technical_debt == true`.
 
-Configure epic IDs in `teams.yaml`:
+Configure epic IDs in `app/config/kpis.yaml` under `teams.<team_id>`:
 
 ```yaml
-tech_debt_epic_ids: [1234, 5678]
+teams:
+  game-services:
+    tech_debt_epic_ids: [1234, 5678]
 ```
 
 **Drilldown** supports `tech_debt_deployed` and `non_tech_debt_deployed` metrics.
 
 
-| RAG   | Threshold         |
-| ----- | ----------------- |
-| Green | 20-30%            |
-| Amber | 10-20%            |
-| Red   | < 10% or > 30%    |
+| RAG   | Threshold      |
+| ----- | -------------- |
+| Green | 20-30%         |
+| Amber | 10-20%         |
+| Red   | < 10% or > 30% |
+
+
+### Initiative Delivery
+
+Measures the proportion of committed deliverables (under initiative epics/features) that were delivered. Both `initiatives_committed` and `initiatives_delivered` count deliverables linked to `initiative_ids` (kpis.yaml).
+
+```
+initiative_delivery = initiatives_delivered / initiatives_committed
+```
+
+- **initiatives_committed**: Deliverables linked to epics/features in `initiative_ids` that were committed (spillover or started in period)
+- **initiatives_delivered**: Deliverables linked to those epics/features that reached canonical "Delivered" status
+
+When `initiative_ids` is empty, nothing is counted (0 committed, 0 delivered). When set, only deliverables under those IDs are tracked.
+
+Configure in `app/config/kpis.yaml` under `teams.<team_id>`:
+
+```yaml
+teams:
+  game-services:
+    initiative_ids: [1234, 5678]
+```
+
+**Drilldown** supports `initiatives_committed` and `initiatives_delivered` metrics.
+
+
+| RAG   | Threshold      |
+| ----- | -------------- |
+| Green | ≥ 80%          |
+| Amber | 60–80%         |
+| Red   | < 60%          |
 
 
 All thresholds are configurable in `app/config/kpis.yaml`.
@@ -773,7 +822,11 @@ All thresholds are configurable in `app/config/kpis.yaml`.
 
 ## Config
 
-Edit `app/config/teams.yaml` to set project, area_paths, deliverable_types, container_types, bug_types, state mappings, tech_debt_epic_ids, post_mortem_epic_ids, post_mortem_sla_weeks, board_name, and wip_limits per team. The five default teams are: **game-services**, **domain-tooling-services**, **payment-services**, **player-engagement-services**, **rules-engine**.
+- **`app/config/teams.yaml`**: project, area_paths, deliverable_types, container_types, bug_types, state mappings, board_name per team.
+- **`app/config/dora.yaml`**: deploy_frequency RAG thresholds and per-team deploy source config (`deploy_frequency.teams.<team_id>`).
+- **`app/config/kpis.yaml`**: KPI configs and per-team overrides (`teams.<team_id>`): tech_debt_epic_ids, post_mortem_epic_ids, post_mortem_sla_weeks, wip_limits, initiative_ids.
+
+The five default teams are: **game-services**, **domain-tooling-services**, **payment-services**, **player-engagement-services**, **rules-engine**.
 
 **Canonical statuses** (each maps from real Azure DevOps states; configurable per team in `states`):
 

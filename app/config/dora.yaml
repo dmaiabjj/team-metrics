@@ -6,6 +6,24 @@ dora:
     rag:
       green_min: 1.0
       amber_min: 0.25
+    teams:
+      game-services:
+        environment_name: "Coreflex PROD"
+        definition_ids: [208, 210, 250, 272]
+      domain-tooling-services:
+        environment_guid: "de00afe2-3b4b-5d17-8d57-d20dedd3fa47"
+        environment_project: "coreflex"
+        environment_name: "Coreflex PROD"
+        definition_ids: [269, 321, 263, 235]
+      payment-services:
+        environment_name: "Coreflex PROD"
+        definition_ids: [352, 346, 345, 343, 337, 329, 328, 350, 348, 339, 338, 341]
+      player-engagement-services:
+        environment_name: "Coreflex PROD"
+        definition_ids: [156, 380, 180, 212, 174, 202]
+      rules-engine:
+        environment_name: "Coreflex PROD"
+        definition_ids: [198, 197, 199]
 
   lead_time:
     enabled: true

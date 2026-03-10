@@ -14,7 +14,7 @@ from app.adapters.azure_devops import AzureDevOpsClient
 from app.api.cache import router as cache_router
 from app.api.dashboard import router as dashboard_router
 from app.api.teams import router as teams_router
-from app.cache import ReportCache, WorkItemCache
+from app.cache import AzureResponseCache, DeploymentCache, ReportCache, WorkItemCache
 from app.rate_limit import limiter
 from app.config.kpi_loader import load_kpi_config
 from app.config.team_loader import load_teams_config
@@ -53,6 +53,12 @@ async def lifespan(app: FastAPI):
     http_client: httpx.AsyncClient | None = None
     azure_client: AzureDevOpsClient | None = None
 
+    azure_cache = AzureResponseCache(
+        maxsize=settings.azure_cache_max,
+        ttl_seconds=settings.azure_cache_ttl_seconds,
+    )
+    app.state.azure_cache = azure_cache
+
     if settings.azure_devops_org and settings.azure_devops_pat:
         http_client = httpx.AsyncClient(
             timeout=settings.http_timeout,
@@ -65,6 +71,7 @@ async def lifespan(app: FastAPI):
             org=settings.azure_devops_org,
             pat=settings.azure_devops_pat,
             http_client=http_client,
+            azure_cache=azure_cache,
         )
         logger.info("Azure DevOps client ready for org=%s", azure_client.org)
     else:
@@ -73,11 +80,16 @@ async def lifespan(app: FastAPI):
     app.state.azure_client = azure_client
     app.state.report_cache = ReportCache(maxsize=settings.report_cache_max, ttl_seconds=settings.cache_ttl_seconds)
     app.state.wi_cache = WorkItemCache(maxsize=settings.wi_cache_max, ttl_seconds=settings.cache_ttl_seconds)
+    app.state.deployment_cache = DeploymentCache(
+        maxsize=settings.deployment_cache_max,
+        ttl_seconds=settings.deployment_cache_ttl_seconds,
+    )
     logger.info(
-        "In-memory caches initialised (L1 max=%d, L2 max=%d, ttl=%ds)",
+        "In-memory caches initialised (L1 max=%d, L2 max=%d, Azure max=%d, deployment max=%d)",
         settings.report_cache_max,
         settings.wi_cache_max,
-        settings.cache_ttl_seconds,
+        settings.azure_cache_max,
+        settings.deployment_cache_max,
     )
 
     yield

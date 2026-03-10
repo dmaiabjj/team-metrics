@@ -675,8 +675,11 @@ def test_lifecycle_ignores_non_state_change_revisions():
 
 
 def test_config_has_tech_debt_and_post_mortem_fields():
+    """Teams have tech_debt/post_mortem config in kpis.yaml (teams section)."""
+    from app.config.kpi_loader import get_team_kpi_overrides
     teams = load_teams_config()
-    for tid, tc in teams.items():
-        assert isinstance(tc.tech_debt_epic_ids, list), f"{tid} missing tech_debt_epic_ids"
-        assert isinstance(tc.post_mortem_epic_ids, list), f"{tid} missing post_mortem_epic_ids"
-        assert tc.post_mortem_sla_weeks is not None, f"{tid} missing post_mortem_sla_weeks"
+    for tid in teams:
+        overrides = get_team_kpi_overrides(tid)
+        assert isinstance(overrides.tech_debt_epic_ids, list), f"{tid} missing tech_debt_epic_ids"
+        assert isinstance(overrides.post_mortem_epic_ids, list), f"{tid} missing post_mortem_epic_ids"
+        assert overrides.post_mortem_sla_weeks is not None, f"{tid} missing post_mortem_sla_weeks"

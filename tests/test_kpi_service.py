@@ -10,6 +10,7 @@ from app.config.kpi_loader import (
     DeliveryPredictabilityConfig,
     FlowHygieneConfig,
     FlowHygieneRAGThresholds,
+    InitiativeDeliveryConfig,
     KPIConfig,
     RAGThresholds,
     RAGThresholdsHigherIsBetter,
@@ -24,6 +25,7 @@ from app.schemas.report import DeliverableRow, StatusTimelineEntry, WorkItemRef
 from app.services.kpi_service import (
     compute_delivery_predictability,
     compute_flow_hygiene,
+    compute_initiative_delivery,
     compute_kpi_average,
     compute_rework_rate,
     compute_tech_debt_ratio,
@@ -1201,3 +1203,102 @@ class TestFilterSnapshotMetric:
     def test_invalid_metric(self):
         with pytest.raises(ValueError, match="Unknown snapshot metric"):
             filter_snapshot_metric([], "invalid", _DEFAULT_KPI_CONFIG, self._start, self._end)
+
+
+# ---------------------------------------------------------------------------
+# Initiative Delivery
+# ---------------------------------------------------------------------------
+
+_DEFAULT_ID_CONFIG = InitiativeDeliveryConfig(
+    enabled=True,
+    delivered_canonical_status="Delivered",
+    rag=RAGThresholdsHigherIsBetter(green_min=0.85, amber_min=0.70),
+)
+
+_DEFAULT_TEAM_CONFIG = TeamConfig(
+    project="test",
+    area_paths=["test"],
+    deliverable_types=["User Story"],
+    container_types=["Epic", "Feature"],
+    bug_types=["Bug"],
+    states=[
+        StateMapping(canonical_status="Delivered", real_states=["Closed", "Resolved", "Release Candidate"]),
+        StateMapping(canonical_status="Development Active", real_states=["Active"]),
+        StateMapping(canonical_status="QA Active", real_states=["In QA"]),
+    ],
+)
+
+
+class TestComputeInitiativeDelivery:
+    def test_empty_deliverables(self):
+        result = compute_initiative_delivery(
+            [], _DEFAULT_ID_CONFIG, _DEFAULT_TEAM_CONFIG, [],
+            date(2025, 1, 1), date(2025, 1, 31),
+        )
+        assert result.name == "initiative_delivery"
+        assert result.value == 0.0
+        assert result.initiatives_committed == 0
+        assert result.initiatives_delivered == 0
+        assert result.rag == RAGStatus.RED
+
+    def test_all_delivered(self):
+        """2 deliverables under initiatives, both committed and delivered -> 100%."""
+        d1 = _make_deliverable(1, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
+        d1.parent_epic = WorkItemRef(id=100, title="Epic A", state="Closed")
+        d2 = _make_deliverable(2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Delivered")
+        d2.parent_epic = WorkItemRef(id=101, title="Epic B", state="Resolved")
+        items = [d1, d2]
+        result = compute_initiative_delivery(
+            items, _DEFAULT_ID_CONFIG, _DEFAULT_TEAM_CONFIG, [100, 101],
+            date(2025, 1, 1), date(2025, 1, 31),
+        )
+        assert result.initiatives_committed == 2
+        assert result.initiatives_delivered == 2
+        assert result.value == 1.0
+        assert result.rag == RAGStatus.GREEN
+
+    def test_partial_delivery(self):
+        """2 deliverables under initiatives committed, 1 delivered -> 50%."""
+        d1 = _make_deliverable(1, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
+        d1.parent_epic = WorkItemRef(id=100, title="Epic A", state="Closed")
+        d2 = _make_deliverable(2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Development Active")
+        d2.parent_epic = WorkItemRef(id=101, title="Epic B", state="Active")
+        items = [d1, d2]
+        result = compute_initiative_delivery(
+            items, _DEFAULT_ID_CONFIG, _DEFAULT_TEAM_CONFIG, [100, 101],
+            date(2025, 1, 1), date(2025, 1, 31),
+        )
+        assert result.initiatives_committed == 2
+        assert result.initiatives_delivered == 1
+        assert result.value == 0.5
+        assert result.rag == RAGStatus.RED
+
+    def test_empty_initiative_ids_counts_nothing(self):
+        """When initiative_ids is empty, count nothing even with deliverables."""
+        d1 = _make_deliverable(1, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc))
+        d1.parent_epic = WorkItemRef(id=100, title="Epic A", state="Closed")
+        d2 = _make_deliverable(2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc))
+        d2.parent_epic = WorkItemRef(id=101, title="Epic B", state="Resolved")
+        items = [d1, d2]
+        result = compute_initiative_delivery(
+            items, _DEFAULT_ID_CONFIG, _DEFAULT_TEAM_CONFIG, [],
+            date(2025, 1, 1), date(2025, 1, 31),
+        )
+        assert result.initiatives_committed == 0
+        assert result.initiatives_delivered == 0
+        assert result.value == 0.0
+
+    def test_filter_by_initiative_ids(self):
+        """Only count deliverables under initiative_ids when set."""
+        d1 = _make_deliverable(1, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
+        d1.parent_epic = WorkItemRef(id=100, title="Epic A", state="Closed")
+        d2 = _make_deliverable(2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc))
+        d2.parent_epic = WorkItemRef(id=101, title="Epic B", state="Active")
+        items = [d1, d2]
+        result = compute_initiative_delivery(
+            items, _DEFAULT_ID_CONFIG, _DEFAULT_TEAM_CONFIG, [100],
+            date(2025, 1, 1), date(2025, 1, 31),
+        )
+        assert result.initiatives_committed == 1
+        assert result.initiatives_delivered == 1
+        assert result.value == 1.0

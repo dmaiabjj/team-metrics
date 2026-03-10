@@ -15,8 +15,8 @@ from app.api.helpers import (
     validate_date_range,
 )
 from app.auth import require_api_key
-from app.config.dora_loader import load_dora_config
-from app.config.kpi_loader import load_kpi_config
+from app.config.dora_loader import get_deploy_frequency_config, load_dora_config
+from app.config.kpi_loader import get_team_kpi_overrides, load_kpi_config
 from app.config.team_loader import get_team_config
 from app.schemas.kpi import (
     AverageKPI,
@@ -34,6 +34,7 @@ from app.services.dora_service import (
 from app.services.kpi_service import (
     compute_delivery_predictability,
     compute_flow_hygiene,
+    compute_initiative_delivery,
     compute_kpi_average,
     compute_rework_rate,
     compute_tech_debt_ratio,
@@ -74,6 +75,7 @@ async def get_dashboard(
     all_fh_kpis = []
     all_wd_kpis = []
     all_td_kpis = []
+    all_id_kpis = []
     all_df_kpis = []
     all_lt_kpis = []
     dora_config = load_dora_config()
@@ -102,8 +104,10 @@ async def get_dashboard(
             kpis.append(dp)
             all_dp_kpis.append(dp)
         if kpi_config.flow_hygiene.enabled and tc is not None:
+                kpi_overrides = get_team_kpi_overrides(tid)
                 wip_limits = await resolve_wip_limits(
                     azure_client, tc, kpi_config.flow_hygiene,
+                    wip_limits_override=kpi_overrides.wip_limits,
                 )
                 fh = compute_flow_hygiene(
                     report.deliverables, kpi_config.flow_hygiene,
@@ -124,11 +128,19 @@ async def get_dashboard(
             )
             kpis.append(td)
             all_td_kpis.append(td)
+        if kpi_config.initiative_delivery.enabled and tc is not None:
+            id_overrides = get_team_kpi_overrides(tid)
+            id_kpi = compute_initiative_delivery(
+                report.deliverables, kpi_config.initiative_delivery, tc,
+                id_overrides.initiative_ids, start_date, end_date,
+            )
+            kpis.append(id_kpi)
+            all_id_kpis.append(id_kpi)
         dora: list = []
         if dora_config.deploy_frequency.enabled:
             df_deployments = []
-            df_team = tc.deploy_frequency if tc else None
-            has_df_config = df_team and (
+            df_team = get_deploy_frequency_config(tid) if tc else None
+            has_df_config = df_team and tc and (
                 df_team.definition_environment_ids
                 or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
             )
@@ -136,6 +148,8 @@ async def get_dashboard(
                 try:
                     df_deployments, _ = await fetch_deploy_frequency_deployments(
                         azure_client, df_team, tc.project, start_date, end_date,
+                        team_id=report.team_id,
+                        deployment_cache=getattr(request.app.state, "deployment_cache", None),
                     )
                 except Exception:
                     pass
@@ -192,6 +206,12 @@ async def get_dashboard(
         kpi_averages.append(
             compute_kpi_average(
                 "tech_debt_ratio", all_td_kpis, kpi_config.tech_debt_ratio,
+            )
+        )
+    if kpi_config.initiative_delivery.enabled and all_id_kpis:
+        kpi_averages.append(
+            compute_kpi_average(
+                "initiative_delivery", all_id_kpis, kpi_config.initiative_delivery,
             )
         )
 

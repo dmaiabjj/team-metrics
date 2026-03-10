@@ -14,8 +14,8 @@ from app.api.helpers import (
     resolve_wip_limits,
 )
 from app.auth import require_api_key
-from app.config.dora_loader import load_dora_config
-from app.config.kpi_loader import load_kpi_config
+from app.config.dora_loader import get_deploy_frequency_config, load_dora_config
+from app.config.kpi_loader import get_team_kpi_overrides, load_kpi_config
 from app.config.team_loader import get_team_config
 from app.schemas.kpi import (
     DrilldownResponse,
@@ -37,11 +37,13 @@ from app.schemas.report import ErrorResponse, WorkItemsResponse
 from app.services.kpi_service import (
     DP_METRICS,
     FH_METRICS,
+    ID_METRICS,
     REWORK_METRICS,
     TD_METRICS,
     WD_METRICS,
     compute_delivery_predictability,
     compute_flow_hygiene,
+    compute_initiative_delivery,
     compute_rework_rate,
     compute_tech_debt_ratio,
     compute_wip_discipline,
@@ -73,6 +75,7 @@ class KPIName(str, Enum):
     FLOW_HYGIENE = "flow-hygiene"
     WIP_DISCIPLINE = "wip-discipline"
     TECH_DEBT_RATIO = "tech-debt-ratio"
+    INITIATIVE_DELIVERY = "initiative-delivery"
     DEPLOY_FREQUENCY = "deploy-frequency"
     LEAD_TIME = "lead-time"
 
@@ -85,6 +88,7 @@ KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.FLOW_HYGIENE: FH_METRICS,
     KPIName.WIP_DISCIPLINE: WD_METRICS,
     KPIName.TECH_DEBT_RATIO: TD_METRICS,
+    KPIName.INITIATIVE_DELIVERY: ID_METRICS,
     KPIName.DEPLOY_FREQUENCY: DF_METRICS,
     KPIName.LEAD_TIME: LT_METRICS,
 }
@@ -104,6 +108,16 @@ async def _compute_single_kpi(
         )
     if kpi_name == KPIName.TECH_DEBT_RATIO:
         return compute_tech_debt_ratio(deliverables, kpi_config.tech_debt_ratio)
+    if kpi_name == KPIName.INITIATIVE_DELIVERY:
+        tc = get_team_config(team_id) if team_id else None
+        if tc is None:
+            raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
+        id_overrides = get_team_kpi_overrides(team_id) if team_id else None
+        return compute_initiative_delivery(
+            deliverables, kpi_config.initiative_delivery, tc,
+            (id_overrides.initiative_ids if id_overrides else []),
+            start_date, end_date,
+        )
 
     if kpi_name == KPIName.DEPLOY_FREQUENCY:
         if dora_config is None or not dora_config.deploy_frequency.enabled:
@@ -111,7 +125,7 @@ async def _compute_single_kpi(
         tc = get_team_config(team_id) if team_id else None
         if tc is None:
             raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
-        df_team = tc.deploy_frequency
+        df_team = get_deploy_frequency_config(team_id) if team_id else None
         has_config = (
             df_team
             and (
@@ -130,6 +144,8 @@ async def _compute_single_kpi(
             )
         deployments, _ = await fetch_deploy_frequency_deployments(
             azure_client, df_team, tc.project, start_date, end_date,
+            team_id=team_id,
+            deployment_cache=getattr(request.app.state, "deployment_cache", None),
         )
         return compute_deploy_frequency(
             deployments, dora_config.deploy_frequency, start_date, end_date,
@@ -148,7 +164,11 @@ async def _compute_single_kpi(
 
     if kpi_name == KPIName.FLOW_HYGIENE:
         azure_client = get_azure_client(request) if request else None
-        wip_limits = await resolve_wip_limits(azure_client, tc, kpi_config.flow_hygiene)
+        kpi_overrides = get_team_kpi_overrides(team_id) if team_id else None
+        wip_limits = await resolve_wip_limits(
+            azure_client, tc, kpi_config.flow_hygiene,
+            wip_limits_override=kpi_overrides.wip_limits if kpi_overrides else None,
+        )
         return compute_flow_hygiene(
             deliverables, kpi_config.flow_hygiene, wip_limits, start_date, end_date,
         )
@@ -231,6 +251,14 @@ async def get_team_kpis(
         kpis.append(compute_tech_debt_ratio(
             report.deliverables, kpi_config.tech_debt_ratio,
         ))
+    if kpi_config.initiative_delivery.enabled:
+        tc = get_team_config(team_id)
+        if tc:
+            id_overrides = get_team_kpi_overrides(team_id)
+            kpis.append(compute_initiative_delivery(
+                report.deliverables, kpi_config.initiative_delivery, tc,
+                id_overrides.initiative_ids, start_date, end_date,
+            ))
     dora: list = []
     dora_config = load_dora_config()
     if dora_config.deploy_frequency.enabled:
@@ -305,7 +333,7 @@ async def get_dora_deploy_frequency_drilldown(
 ) -> DrilldownResponse:
     """Drilldown into deploy frequency deployments."""
     tc = get_team_config(team_id)
-    df_team = tc.deploy_frequency if tc else None
+    df_team = get_deploy_frequency_config(team_id) if tc else None
     has_df_config = df_team and (
         df_team.definition_environment_ids
         or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
@@ -315,6 +343,8 @@ async def get_dora_deploy_frequency_drilldown(
         azure_client = get_azure_client(request)
         raw, fmt = await fetch_deploy_frequency_deployments(
             azure_client, df_team, tc.project, start_date, end_date,
+            team_id=team_id,
+            deployment_cache=getattr(request.app.state, "deployment_cache", None),
         )
         deployments = (
             deployments_to_summaries(raw) if fmt == "release"
@@ -388,7 +418,7 @@ async def get_dora_deploy_frequency(
         request=request, team_id=team_id, dora_config=dora_config,
     )
     tc = get_team_config(team_id)
-    df_team = tc.deploy_frequency if tc else None
+    df_team = get_deploy_frequency_config(team_id) if tc else None
     has_df_config = df_team and (
         df_team.definition_environment_ids
         or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
@@ -398,6 +428,8 @@ async def get_dora_deploy_frequency(
         azure_client = get_azure_client(request)
         raw, fmt = await fetch_deploy_frequency_deployments(
             azure_client, df_team, tc.project, start_date, end_date,
+            team_id=team_id,
+            deployment_cache=getattr(request.app.state, "deployment_cache", None),
         )
         deployments = (
             deployments_to_summaries(raw) if fmt == "release"
@@ -482,7 +514,7 @@ async def get_team_kpi_detail(
 
     if kpi_name == KPIName.DEPLOY_FREQUENCY:
         tc = get_team_config(team_id)
-        df_team = tc.deploy_frequency if tc else None
+        df_team = get_deploy_frequency_config(team_id) if tc else None
         has_df_config = df_team and (
             df_team.definition_environment_ids
             or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
@@ -491,6 +523,8 @@ async def get_team_kpi_detail(
             azure_client = get_azure_client(request)
             raw, fmt = await fetch_deploy_frequency_deployments(
                 azure_client, df_team, tc.project, start_date, end_date,
+                team_id=team_id,
+                deployment_cache=getattr(request.app.state, "deployment_cache", None),
             )
             deployments = (
                 deployments_to_summaries(raw) if fmt == "release"
@@ -512,6 +546,8 @@ async def get_team_kpi_detail(
                 seen_ids.add(d.id)
                 items.append(d)
     else:
+        tc = get_team_config(team_id)
+        id_overrides = get_team_kpi_overrides(team_id) if kpi_name == KPIName.INITIATIVE_DELIVERY else None
         for metric in KPI_METRICS[kpi_name]:
             for d in filter_deliverables_by_metric(
                 report.deliverables,
@@ -520,10 +556,26 @@ async def get_team_kpi_detail(
                 dp_config=kpi_config.delivery_predictability,
                 fh_config=kpi_config.flow_hygiene,
                 td_config=kpi_config.tech_debt_ratio,
+                id_config=kpi_config.initiative_delivery if kpi_name == KPIName.INITIATIVE_DELIVERY else None,
+                id_overrides=id_overrides,
+                team_config=tc if kpi_name in (KPIName.WIP_DISCIPLINE, KPIName.INITIATIVE_DELIVERY) else None,
                 start=start_date,
                 end=end_date,
             ):
                 if d.id not in seen_ids:
+                    seen_ids.add(d.id)
+                    items.append(d)
+        # For initiative_delivery, also include all deliverables under initiative_ids
+        # so the user sees the work even when committed/delivered counts are 0
+        if kpi_name == KPIName.INITIATIVE_DELIVERY and id_overrides and id_overrides.initiative_ids:
+            ids_filter = frozenset(id_overrides.initiative_ids)
+            for d in report.deliverables:
+                if d.id in seen_ids:
+                    continue
+                if d.parent_epic and d.parent_epic.id in ids_filter:
+                    seen_ids.add(d.id)
+                    items.append(d)
+                elif d.parent_feature and d.parent_feature.id in ids_filter:
                     seen_ids.add(d.id)
                     items.append(d)
 
@@ -570,7 +622,7 @@ async def get_kpi_drilldown(
 
     if kpi_name == KPIName.DEPLOY_FREQUENCY and metric == "deployments":
         tc = get_team_config(team_id)
-        df_team = tc.deploy_frequency if tc else None
+        df_team = get_deploy_frequency_config(team_id) if tc else None
         has_df_config = df_team and (
             df_team.definition_environment_ids
             or (df_team.definition_ids and (df_team.environment_name or df_team.environment_guid))
@@ -580,6 +632,8 @@ async def get_kpi_drilldown(
             azure_client = get_azure_client(request)
             raw, fmt = await fetch_deploy_frequency_deployments(
                 azure_client, df_team, tc.project, start_date, end_date,
+                team_id=team_id,
+                deployment_cache=getattr(request.app.state, "deployment_cache", None),
             )
             deployments = (
                 deployments_to_summaries(raw) if fmt == "release"
@@ -614,7 +668,8 @@ async def get_kpi_drilldown(
             items=filtered[skip : skip + limit],
         )
 
-    tc = get_team_config(team_id) if kpi_name == KPIName.WIP_DISCIPLINE else None
+    tc = get_team_config(team_id) if kpi_name in (KPIName.WIP_DISCIPLINE, KPIName.INITIATIVE_DELIVERY) else None
+    id_overrides = get_team_kpi_overrides(team_id) if kpi_name == KPIName.INITIATIVE_DELIVERY else None
     filtered = filter_deliverables_by_metric(
         report.deliverables,
         metric,
@@ -623,6 +678,8 @@ async def get_kpi_drilldown(
         fh_config=kpi_config.flow_hygiene,
         wd_config=kpi_config.wip_discipline,
         td_config=kpi_config.tech_debt_ratio,
+        id_config=kpi_config.initiative_delivery if kpi_name == KPIName.INITIATIVE_DELIVERY else None,
+        id_overrides=id_overrides,
         team_config=tc,
         start=start_date,
         end=end_date,
