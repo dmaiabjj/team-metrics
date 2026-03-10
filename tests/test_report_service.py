@@ -504,62 +504,53 @@ def test_bounces_delivered_to_backlog():
 
 
 def test_tags_no_rework():
-    revs = [
-        {"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}},
-        {"fields": {"System.ChangedDate": "2025-01-15T10:00:00Z", "System.State": "Closed"}},
-    ]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], None, 0)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [], None, 0)
     assert has_rework is False
     assert is_spillover is False
     assert tags == []
 
 
 def test_tags_code_defect_from_linked_bugs():
-    revs = [{"fields": {"System.ChangedDate": "2025-01-01T10:00:00Z", "System.State": "Active"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [100, 101], None, 0)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [100, 101], None, 0)
     assert has_rework is True
     assert is_spillover is False
     assert "Code Defect" in tags
 
 
 def test_tags_scope_requirements_from_bounces():
-    has_rework, is_spillover, tags = _compute_tags([], _TAG_CANONICAL, [], None, 2)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [], None, 2)
     assert has_rework is True
     assert "Scope / Requirements" in tags
 
 
 def test_tags_no_scope_requirements_zero_bounces():
-    has_rework, is_spillover, tags = _compute_tags([], _TAG_CANONICAL, [], None, 0)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [], None, 0)
     assert has_rework is False
     assert "Scope / Requirements" not in tags
 
 
 def test_tags_spillover_dev_active_at_start():
-    revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "Active"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "Active", 0)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [], "Active", 0)
     assert is_spillover is True
     assert "Spillover" in tags
     assert has_rework is False
 
 
 def test_tags_spillover_qa_active_at_start():
-    revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "In Review"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "In Review", 0)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [], "In Review", 0)
     assert is_spillover is True
     assert "Spillover" in tags
     assert has_rework is False
 
 
 def test_tags_no_spillover_when_backlog_at_start():
-    revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "New"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [], "New", 0)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [], "New", 0)
     assert is_spillover is False
     assert "Spillover" not in tags
 
 
 def test_tags_combined_code_defect_and_spillover():
-    revs = [{"fields": {"System.ChangedDate": "2024-12-01T10:00:00Z", "System.State": "Active"}}]
-    has_rework, is_spillover, tags = _compute_tags(revs, _TAG_CANONICAL, [200], "Active", 0)
+    has_rework, is_spillover, tags = _compute_tags(_TAG_CANONICAL, [200], "Active", 0)
     assert has_rework is True
     assert is_spillover is True
     assert "Code Defect" in tags

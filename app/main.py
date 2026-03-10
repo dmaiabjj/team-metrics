@@ -8,15 +8,14 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.api.cache import router as cache_router
 from app.api.dashboard import router as dashboard_router
 from app.api.teams import router as teams_router
 from app.cache import ReportCache, WorkItemCache
+from app.rate_limit import limiter
 from app.config.kpi_loader import load_kpi_config
 from app.config.team_loader import load_teams_config
 from app.schemas.report import ErrorResponse
@@ -72,12 +71,13 @@ async def lifespan(app: FastAPI):
         logger.warning("Azure DevOps credentials not configured — API will return 503")
 
     app.state.azure_client = azure_client
-    app.state.report_cache = ReportCache(maxsize=settings.report_cache_max)
-    app.state.wi_cache = WorkItemCache(maxsize=settings.wi_cache_max)
+    app.state.report_cache = ReportCache(maxsize=settings.report_cache_max, ttl_seconds=settings.cache_ttl_seconds)
+    app.state.wi_cache = WorkItemCache(maxsize=settings.wi_cache_max, ttl_seconds=settings.cache_ttl_seconds)
     logger.info(
-        "In-memory caches initialised (L1 max=%d, L2 max=%d)",
+        "In-memory caches initialised (L1 max=%d, L2 max=%d, ttl=%ds)",
         settings.report_cache_max,
         settings.wi_cache_max,
+        settings.cache_ttl_seconds,
     )
 
     yield
@@ -87,8 +87,6 @@ async def lifespan(app: FastAPI):
         await http_client.aclose()
         logger.info("HTTP client closed")
 
-
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 app = FastAPI(
     title="Azure DevOps Performance Report API",
@@ -156,14 +154,7 @@ async def health(deep: bool = False):
             result["azure"] = "not_configured"
         else:
             try:
-                # Lightweight probe: list projects (1 result)
-                r = await client._client.get(
-                    f"{client._base}/_apis/projects",
-                    params={"api-version": "7.1", "$top": "1"},
-                    auth=client._auth,
-                    headers=client._headers(),
-                )
-                r.raise_for_status()
+                await client.health_check()
                 result["azure"] = "connected"
             except Exception as e:
                 result["azure"] = f"error: {e}"

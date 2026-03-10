@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Cache limits
     report_cache_max: int = 256
     wi_cache_max: int = 4096
+    cache_ttl_seconds: int = 0  # 0 = no TTL (infinite); set e.g. 3600 for 1 hour
 
     # Request timeout (overall report generation)
     report_timeout: float = 300.0  # seconds

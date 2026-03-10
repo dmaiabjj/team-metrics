@@ -7,7 +7,9 @@ from datetime import date
 from app.config.kpi_loader import KPIConfig
 from app.schemas.report import DeliverableRow
 from app.schemas.snapshot import DeliverySnapshot
-from app.services.kpi_service import _committed_items, _date_in_range, _has_rework_tags, _reached_qa
+from app.services.common import committed_items as _committed_items
+from app.services.common import date_in_range as _date_in_range
+from app.services.kpi_service import _has_rework_tags, _reached_qa
 
 VALID_SNAPSHOT_METRICS = frozenset({
     "delivered", "committed", "committed_in_period", "spillovers",

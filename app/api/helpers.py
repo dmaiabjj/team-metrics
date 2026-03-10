@@ -93,26 +93,33 @@ async def fetch_deploy_frequency_deployments(
         return deployments, "release"
 
     if df_config.definition_ids and df_config.environment_name:
+        # Try Build API first (YAML pipelines with stage name).
         deployments = await azure_client.get_build_deployments_by_stage(
             project, min_t, max_t,
             df_config.definition_ids,
             stage_name=df_config.environment_name,
         )
-        return deployments, "build"
+        if deployments:
+            return deployments, "build"
 
-    if df_config.definition_ids and df_config.environment_name:
+        # Fallback to Release API (classic pipelines).
         deployments = await azure_client.get_release_deployments_by_definition_and_env_name(
             project, min_t, max_t,
             df_config.definition_ids,
             df_config.environment_name,
         )
-        if not deployments and df_config.environment_guid:
+        if deployments:
+            return deployments, "release"
+
+        # Final fallback to Environments API if environment_guid is configured.
+        if df_config.environment_guid:
             env_project = df_config.environment_project or project
             records = await azure_client.get_environment_deployment_records(
                 env_project, df_config.environment_guid, min_t, max_t,
             )
             return records, "environment"
-        return deployments, "release"
+
+        return [], "build"
 
     if df_config.definition_ids and df_config.environment_guid:
         env_project = df_config.environment_project or project

@@ -13,25 +13,8 @@ from app.config.team_loader import TeamConfig
 from app.schemas.dora import DeployFrequencyKPI, LeadTimeKPI
 from app.schemas.kpi import AverageKPI, RAGStatus
 from app.schemas.report import DeliverableRow
-
-
-def _date_in_range(dt: datetime | None, start: date, end: date) -> bool:
-    if dt is None:
-        return False
-    d = dt.date() if isinstance(dt, datetime) else dt
-    return start <= d <= end
-
-
-def _committed_items(
-    deliverables: list[DeliverableRow],
-    start: date,
-    end: date,
-) -> list[DeliverableRow]:
-    """Items committed to the period: spillovers + items started in period."""
-    return [
-        d for d in deliverables
-        if d.is_spillover or _date_in_range(d.start_date, start, end)
-    ]
+from app.services.common import committed_items as _committed_items
+from app.services.common import date_in_range as _date_in_range
 
 
 # ---------------------------------------------------------------------------

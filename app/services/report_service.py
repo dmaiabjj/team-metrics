@@ -26,6 +26,16 @@ ACTIVE_OR_DELIVERED_CANONICAL = frozenset({"Development Active", "QA Active", "D
 
 MAX_PARENT_DEPTH = 5  # guard against infinite loops in hierarchy walk
 
+_MIN_DT = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _prepare_revisions(revisions: list[dict]) -> list[dict]:
+    """Filter out revisions with no date and sort chronologically. Call once per work item."""
+    return sorted(
+        (r for r in revisions if _parse_revision_date(r) is not None),
+        key=lambda r: _parse_revision_date(r) or _MIN_DT,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Field helpers
@@ -124,14 +134,11 @@ class _LifecycleDates:
         self.delivery_days = delivery_days
 
 
-ACTIVE_CANONICAL_SET = frozenset({"Development Active", "QA Active"})
-
-
 def _compute_lifecycle_dates(
-    revisions: list[dict],
+    sorted_revs: list[dict],
     real_to_canonical: dict[str, str],
 ) -> _LifecycleDates:
-    """Extract key lifecycle timestamps from revision history.
+    """Extract key lifecycle timestamps from pre-sorted revision history.
 
     date_created: timestamp of the first revision (creation).
     start_date: timestamp when the item first entered Development Active or QA Active.
@@ -139,11 +146,6 @@ def _compute_lifecycle_dates(
                  state is still Delivered. If it bounced back, finish_date is None.
     delivery_days: calendar days from date_created to finish_date (None if not delivered).
     """
-    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    sorted_revs = sorted(
-        (r for r in revisions if _parse_revision_date(r) is not None),
-        key=lambda r: _parse_revision_date(r) or _min_dt,
-    )
     if not sorted_revs:
         return _LifecycleDates()
 
@@ -163,7 +165,7 @@ def _compute_lifecycle_dates(
         dt = _parse_revision_date(rev)
         if dt is None:
             continue
-        if first_active_dt is None and canon in ACTIVE_CANONICAL_SET:
+        if first_active_dt is None and canon in ACTIVE_CANONICAL:
             first_active_dt = dt
         if canon == "Delivered":
             last_delivered_dt = dt
@@ -188,7 +190,7 @@ def _compute_lifecycle_dates(
 # ---------------------------------------------------------------------------
 
 def _apply_inclusion(
-    revisions: list[dict],
+    sorted_revs: list[dict],
     start_dt: datetime,
     end_dt: datetime,
     real_to_canonical: dict[str, str],
@@ -197,13 +199,6 @@ def _apply_inclusion(
     - Rule 1: any revision in period has canonical Development Active / QA Active / Delivered
     - Rule 2: state_at_start in Active/QA AND state_at_end in Active/QA/Delivered
     """
-    if not revisions:
-        return False
-    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    sorted_revs = sorted(
-        (r for r in revisions if _parse_revision_date(r) is not None),
-        key=lambda r: _parse_revision_date(r) or _min_dt,
-    )
     if not sorted_revs:
         return False
 
@@ -257,21 +252,16 @@ CANONICAL_TO_ROLE = {
 
 
 def _compute_role_assignments(
-    revisions: list[dict],
+    sorted_revs: list[dict],
     real_to_canonical: dict[str, str],
 ) -> tuple[str | None, str | None, str | None]:
-    """Compute developer, QA, and release_manager from revision history.
+    """Compute developer, QA, and release_manager from pre-sorted revision history.
 
     Last-one-wins: the last person assigned while the item is in a canonical
     status becomes the role holder. Revisions are walked chronologically.
 
     Returns (developer, qa, release_manager).
     """
-    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    sorted_revs = sorted(
-        (r for r in revisions if _parse_revision_date(r) is not None),
-        key=lambda r: _parse_revision_date(r) or _min_dt,
-    )
     if not sorted_revs:
         return None, None, None
 
@@ -299,16 +289,10 @@ def _compute_role_assignments(
 # ---------------------------------------------------------------------------
 
 def _compute_status_timeline(
-    revisions: list[dict],
+    sorted_revs: list[dict],
     real_to_canonical: dict[str, str],
 ) -> list[StatusTimelineEntry]:
-    """Build chronological list of state transitions from revision history."""
-    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    sorted_revs = sorted(
-        (r for r in revisions if _parse_revision_date(r) is not None),
-        key=lambda r: _parse_revision_date(r) or _min_dt,
-    )
-
+    """Build chronological list of state transitions from pre-sorted revision history."""
     timeline: list[StatusTimelineEntry] = []
     prev_state: str | None = None
     for rev in sorted_revs:
@@ -339,7 +323,7 @@ TAG_SPILLOVER = "Spillover"
 
 
 def _compute_bounces(
-    revisions: list[dict],
+    sorted_revs: list[dict],
     real_to_canonical: dict[str, str],
 ) -> tuple[int, list[BounceDetail]]:
     """Count how many times the item went from QA/Delivered back to active/backlog.
@@ -347,12 +331,6 @@ def _compute_bounces(
     Returns (bounce_count, bounce_details). Each detail records the revision
     numbers, states, and timestamp of the regression.
     """
-    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    sorted_revs = sorted(
-        (r for r in revisions if _parse_revision_date(r) is not None),
-        key=lambda r: _parse_revision_date(r) or _min_dt,
-    )
-
     details: list[BounceDetail] = []
     prev_canon: str | None = None
     prev_state: str | None = None
@@ -367,7 +345,7 @@ def _compute_bounces(
             prev_canon in ("QA Active", "Delivered")
             and canon in ("Development Active", "Backlog")
         ):
-            dt = _parse_revision_date(rev) or _min_dt
+            dt = _parse_revision_date(rev) or _MIN_DT
             details.append(BounceDetail(
                 from_revision=prev_rev_num,
                 to_revision=rev_num,
@@ -384,7 +362,6 @@ def _compute_bounces(
 
 
 def _compute_tags(
-    revisions: list[dict],
     real_to_canonical: dict[str, str],
     child_bug_ids: list[int],
     status_at_start: str | None,
@@ -415,7 +392,7 @@ def _compute_tags(
 
 
 def _compute_boundary_statuses(
-    revisions: list[dict],
+    sorted_revs: list[dict],
     start_dt: datetime,
     end_dt: datetime,
 ) -> tuple[str | None, str | None]:
@@ -424,11 +401,6 @@ def _compute_boundary_statuses(
     status_at_start = state of the most recent revision at or before start_dt.
     status_at_end   = state of the most recent revision at or before end_dt.
     """
-    _min_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    sorted_revs = sorted(
-        (r for r in revisions if _parse_revision_date(r) is not None),
-        key=lambda r: _parse_revision_date(r) or _min_dt,
-    )
     if not sorted_revs:
         return None, None
 
@@ -516,17 +488,19 @@ async def _collect_children(
     client: AzureDevOpsClient,
     project: str,
     work_item: dict,
-    all_work_items_by_id: dict[int, dict],
+    known_work_items: dict[int, dict],
     team: TeamConfig,
     wi_cache: WorkItemCache | None = None,
-) -> tuple[list[WorkItemRef], list[WorkItemRef]]:
-    """Return (child_bugs, child_tasks) as WorkItemRef lists.
+) -> tuple[list[WorkItemRef], list[WorkItemRef], dict[int, dict]]:
+    """Return (child_bugs, child_tasks, newly_fetched) as WorkItemRef lists.
 
-    Batch-fetches any child IDs not already in the lookup dict (e.g. Bugs
-    that weren't in the WIQL deliverable query).
+    Batch-fetches any child IDs not already in known_work_items (e.g. Bugs
+    that weren't in the WIQL deliverable query). Returns newly fetched items
+    separately to avoid mutating the shared lookup.
     """
     bugs: list[WorkItemRef] = []
     tasks: list[WorkItemRef] = []
+    newly_fetched: dict[int, dict] = {}
 
     relations = work_item.get("relations") or []
     child_ids: list[int] = []
@@ -538,28 +512,31 @@ async def _collect_children(
             child_ids.append(cid)
 
     if not child_ids:
-        return bugs, tasks
+        return bugs, tasks, newly_fetched
 
-    # Check L2 cache for children not yet in the in-memory lookup
-    if wi_cache is not None:
-        for cid in child_ids:
-            if cid not in all_work_items_by_id:
-                cached_wi = wi_cache.get(project, cid)
-                if cached_wi is not None:
-                    all_work_items_by_id[cid] = cached_wi
+    # Build local lookup: known items + L2 cache hits
+    local_lookup: dict[int, dict] = {}
+    for cid in child_ids:
+        if cid in known_work_items:
+            local_lookup[cid] = known_work_items[cid]
+        elif wi_cache is not None:
+            cached_wi = wi_cache.get(project, cid)
+            if cached_wi is not None:
+                local_lookup[cid] = cached_wi
 
-    missing_ids = [cid for cid in child_ids if cid not in all_work_items_by_id]
+    missing_ids = [cid for cid in child_ids if cid not in local_lookup]
     if missing_ids:
-        fetched = await client.get_work_items_batch(project, missing_ids, expand="None")
+        fetched = await client.get_work_items_batch(project, missing_ids, expand="none")
         for wi in fetched:
             wid = wi.get("id")
             if wid:
-                all_work_items_by_id[wid] = wi
+                local_lookup[wid] = wi
+                newly_fetched[wid] = wi
                 if wi_cache is not None:
                     wi_cache.put(project, wid, wi)
 
     for cid in child_ids:
-        child_wi = all_work_items_by_id.get(cid)
+        child_wi = local_lookup.get(cid)
         if not child_wi:
             continue
         ctype = _work_item_type(child_wi)
@@ -573,7 +550,7 @@ async def _collect_children(
         elif ctype in team.deliverable_types or "Task" in ctype:
             tasks.append(ref)
 
-    return bugs, tasks
+    return bugs, tasks, newly_fetched
 
 
 # ---------------------------------------------------------------------------
@@ -609,10 +586,12 @@ async def run_report(
     real_to_canonical = team.real_state_to_canonical()
 
     # Step 1: WIQL to get candidate deliverable IDs
+    changed_since = date(start_date.year, 1, 1)
     candidate_ids = await client.wiql_query(
         team.project,
         team.area_paths,
         team.deliverable_types,
+        changed_since=changed_since,
     )
     logger.info(
         "Team %s: %d WIQL candidates in %s – %s",
@@ -632,8 +611,9 @@ async def run_report(
         async with semaphore:
             try:
                 revs = await client.get_revisions(team.project, wid)
-                if _apply_inclusion(revs, start_dt, end_dt, real_to_canonical):
-                    return (wid, revs)
+                sorted_revs = _prepare_revisions(revs)
+                if _apply_inclusion(sorted_revs, start_dt, end_dt, real_to_canonical):
+                    return (wid, sorted_revs)
             except Exception:
                 logger.exception("Failed to check revisions for work item %d", wid)
             return None
@@ -669,7 +649,26 @@ async def run_report(
         if wid:
             parents_by_id[wid] = parent_pair
 
-    # Step 4b: Enrich each deliverable
+    # Step 4b: Collect children concurrently
+    child_semaphore = asyncio.Semaphore(settings.revision_concurrency)
+
+    async def _collect_with_sem(wi: dict) -> tuple[int, list[WorkItemRef], list[WorkItemRef], dict[int, dict]]:
+        async with child_semaphore:
+            bugs, tasks, fetched = await _collect_children(
+                client, team.project, wi, by_id, team, wi_cache
+            )
+            return wi.get("id", 0), bugs, tasks, fetched
+
+    child_results = await asyncio.gather(*[_collect_with_sem(wi) for wi in work_items])
+
+    # Merge newly fetched items into the shared lookup
+    children_by_id: dict[int, tuple[list[WorkItemRef], list[WorkItemRef]]] = {}
+    for wid, bugs, tasks, fetched in child_results:
+        if wid:
+            children_by_id[wid] = (bugs, tasks)
+            by_id.update(fetched)
+
+    # Step 4c: Enrich each deliverable
     deliverables: list[DeliverableRow] = []
     for wi in work_items:
         wid = wi.get("id")
@@ -679,9 +678,7 @@ async def run_report(
         canonical_status = real_to_canonical.get(state) or "Unknown"
 
         epic_ref, feature_ref = parents_by_id.get(wid, (None, None))
-        child_bugs, child_tasks = await _collect_children(
-            client, team.project, wi, by_id, team, wi_cache
-        )
+        child_bugs, child_tasks = children_by_id.get(wid, ([], []))
 
         # Compute enrichments from cached revisions
         revs = revisions_by_id.get(wid, [])
@@ -691,7 +688,7 @@ async def run_report(
         bounce_count, bounce_details = _compute_bounces(revs, real_to_canonical)
         child_bug_ids = [b.id for b in child_bugs]
         has_rework, is_spillover, tags = _compute_tags(
-            revs, real_to_canonical, child_bug_ids, status_at_start, bounce_count,
+            real_to_canonical, child_bug_ids, status_at_start, bounce_count,
         )
 
         parent_epic_id = epic_ref.id if epic_ref else None

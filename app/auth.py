@@ -6,6 +6,8 @@ X-API-Key header to match. When API_KEY is empty, auth is disabled (open access)
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
 
@@ -21,6 +23,6 @@ async def require_api_key(
     settings = get_settings()
     if not settings.api_key:
         return None
-    if not api_key or api_key != settings.api_key:
+    if not api_key or not hmac.compare_digest(api_key, settings.api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return api_key

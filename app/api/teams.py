@@ -7,9 +7,6 @@ from datetime import date, datetime, timezone
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
 from app.api.helpers import (
     fetch_deploy_frequency_deployments,
     get_azure_client,
@@ -38,6 +35,11 @@ from app.services.dora_service import (
 from app.schemas.snapshot import SnapshotDrilldownResponse
 from app.schemas.report import ErrorResponse, WorkItemsResponse
 from app.services.kpi_service import (
+    DP_METRICS,
+    FH_METRICS,
+    REWORK_METRICS,
+    TD_METRICS,
+    WD_METRICS,
     compute_delivery_predictability,
     compute_flow_hygiene,
     compute_rework_rate,
@@ -60,7 +62,8 @@ _ERROR_RESPONSES = {
     503: {"model": ErrorResponse, "description": "Azure DevOps not configured"},
 }
 
-limiter = Limiter(key_func=get_remote_address)
+from app.rate_limit import limiter
+
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
 
@@ -74,21 +77,6 @@ class KPIName(str, Enum):
     LEAD_TIME = "lead-time"
 
 
-REWORK_METRICS = frozenset({
-    "items_reached_qa", "items_with_rework", "items_bounced_back", "items_with_bugs",
-})
-DP_METRICS = frozenset({
-    "items_committed", "items_deployed", "items_started_in_period", "items_spillover",
-})
-FH_METRICS = frozenset({
-    "items_in_queue",
-})
-WD_METRICS = frozenset({
-    "developers", "qas", "compliant_gte_80", "over_wip_limit",
-})
-TD_METRICS = frozenset({
-    "tech_debt_deployed", "non_tech_debt_deployed",
-})
 DF_METRICS = frozenset({"deployments"})
 LT_METRICS = frozenset({"measured_items"})
 KPI_METRICS: dict[KPIName, frozenset[str]] = {

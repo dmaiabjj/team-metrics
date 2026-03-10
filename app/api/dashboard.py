@@ -7,9 +7,6 @@ import logging
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
 from app.api.helpers import (
     fetch_all_reports,
     fetch_deploy_frequency_deployments,
@@ -51,7 +48,8 @@ _ERROR_RESPONSES = {
     503: {"model": ErrorResponse, "description": "Azure DevOps not configured"},
 }
 
-limiter = Limiter(key_func=get_remote_address)
+from app.rate_limit import limiter
+
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
 

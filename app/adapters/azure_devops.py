@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 
 import httpx
 from tenacity import (
+    RetryCallState,
     retry,
     retry_if_exception,
     stop_after_attempt,
@@ -22,6 +23,21 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in {429, 503}
     return isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout))
+
+
+def _wait_with_retry_after(retry_state: RetryCallState) -> float:
+    """Respect Retry-After header on 429 responses, fall back to exponential backoff."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        retry_after = exc.response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                wait_seconds = float(retry_after)
+                return min(wait_seconds, 60.0)  # cap at 60s
+            except (ValueError, TypeError):
+                pass
+    # Fall back to exponential backoff: 1s, 2s, 4s, ... capped at 10s.
+    return wait_exponential(multiplier=1, min=1, max=10)(retry_state)
 
 
 def _escape_wiql(value: str) -> str:
@@ -79,7 +95,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def wiql_query(
@@ -138,7 +154,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def get_revisions(self, project: str, work_item_id: int) -> list[dict]:
@@ -157,7 +173,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def get_work_item(
@@ -183,7 +199,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def _fetch_batch_chunk(
@@ -283,7 +299,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def get_release_deployments(
@@ -353,7 +369,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def get_build_deployments_by_stage(
@@ -481,7 +497,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def get_release_deployments_by_definition_and_env_name(
@@ -549,7 +565,7 @@ class AzureDevOpsClient:
     @retry(
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        wait=_wait_with_retry_after,
         reraise=True,
     )
     async def get_environment_deployment_records(
@@ -567,6 +583,8 @@ class AzureDevOpsClient:
         """
         base = f"https://dev.azure.com/{self.org}/{project}/_apis/pipelines/environments/{environment_id}/environmentdeploymentrecords"
         all_records: list[dict] = []
+        total_raw = 0
+        first_rec_keys: list[str] | None = None
         continuation_token: str | None = None
 
         while True:
@@ -584,15 +602,7 @@ class AzureDevOpsClient:
                     headers=self._headers(),
                 )
                 r.raise_for_status()
-            except Exception as e:
-                # #region agent log
-                try:
-                    import json
-                    with open("/Volumes/Personal Data/VenturesLab/ai/team_metrics/.cursor/debug-79de70.log", "a") as f:
-                        f.write(json.dumps({"hypothesisId": "F2", "location": "azure_devops.py:env_api_error", "message": "Environments API exception", "data": {"project": project, "env_id": environment_id, "error": str(e)}, "timestamp": __import__("time").time() * 1000}) + "\n")
-                except Exception:
-                    pass
-                # #endregion
+            except Exception:
                 logger.warning(
                     "Could not fetch environment deployment records for env=%s",
                     environment_id, exc_info=True,

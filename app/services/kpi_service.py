@@ -28,6 +28,11 @@ from app.schemas.kpi import (
     WIPDisciplineKPI,
 )
 from app.schemas.report import DeliverableRow
+from app.services.common import committed_items, date_in_range
+
+# Re-export for backwards compatibility with snapshot_service imports.
+_date_in_range = date_in_range
+_committed_items = committed_items
 
 
 # ---------------------------------------------------------------------------
@@ -64,14 +69,6 @@ def _rag_flow_hygiene(value: float, config: FlowHygieneConfig) -> RAGStatus:
     if value <= config.rag.amber_max:
         return RAGStatus.AMBER
     return RAGStatus.RED
-
-
-def _date_in_range(dt: datetime | None, start: date, end: date) -> bool:
-    """Check if a datetime falls within [start, end] (date-only comparison)."""
-    if dt is None:
-        return False
-    d = dt.date() if isinstance(dt, datetime) else dt
-    return start <= d <= end
 
 
 # ---------------------------------------------------------------------------
@@ -117,18 +114,6 @@ def compute_rework_rate(
 # ---------------------------------------------------------------------------
 # Delivery Predictability
 # ---------------------------------------------------------------------------
-
-def _committed_items(
-    deliverables: list[DeliverableRow],
-    start: date,
-    end: date,
-) -> list[DeliverableRow]:
-    """Items committed to the period: spillovers + items started in period."""
-    return [
-        d for d in deliverables
-        if d.is_spillover or _date_in_range(d.start_date, start, end)
-    ]
-
 
 def compute_delivery_predictability(
     deliverables: list[DeliverableRow],
@@ -533,27 +518,27 @@ def compute_kpi_average(
 # Drilldown filtering
 # ---------------------------------------------------------------------------
 
-_REWORK_METRICS = frozenset({
+REWORK_METRICS = frozenset({
     "items_reached_qa", "items_with_rework", "items_bounced_back", "items_with_bugs",
 })
 
-_DP_METRICS = frozenset({
+DP_METRICS = frozenset({
     "items_committed", "items_deployed", "items_started_in_period", "items_spillover",
 })
 
-_FH_METRICS = frozenset({
+FH_METRICS = frozenset({
     "items_in_queue",
 })
 
-_WD_METRICS = frozenset({
+WD_METRICS = frozenset({
     "developers", "qas", "compliant_gte_80", "over_wip_limit",
 })
 
-_TD_METRICS = frozenset({
+TD_METRICS = frozenset({
     "tech_debt_deployed", "non_tech_debt_deployed",
 })
 
-VALID_DRILLDOWN_METRICS = _REWORK_METRICS | _DP_METRICS | _FH_METRICS | _WD_METRICS | _TD_METRICS
+VALID_DRILLDOWN_METRICS = REWORK_METRICS | DP_METRICS | FH_METRICS | WD_METRICS | TD_METRICS
 
 
 def filter_deliverables_by_metric(
@@ -574,7 +559,7 @@ def filter_deliverables_by_metric(
             f"Unknown metric '{metric}'. Valid: {sorted(VALID_DRILLDOWN_METRICS)}"
         )
 
-    if metric in _REWORK_METRICS:
+    if metric in REWORK_METRICS:
         if rework_config is None:
             raise ValueError("rework_config required for rework metrics")
         qa_canonical = rework_config.qa_canonical_status
@@ -592,7 +577,7 @@ def filter_deliverables_by_metric(
         if metric == "items_with_bugs":
             return [d for d in deliverables if len(d.child_bugs) > 0]
 
-    if metric in _DP_METRICS:
+    if metric in DP_METRICS:
         if dp_config is None or start is None or end is None:
             raise ValueError("dp_config, start, and end required for delivery predictability metrics")
         delivered_canonical = dp_config.delivered_canonical_status
@@ -607,14 +592,14 @@ def filter_deliverables_by_metric(
         if metric == "items_spillover":
             return [d for d in committed if d.is_spillover]
 
-    if metric in _FH_METRICS:
+    if metric in FH_METRICS:
         if fh_config is None:
             raise ValueError("fh_config required for flow hygiene metrics")
         queue_states = frozenset(fh_config.queue_states)
         if metric == "items_in_queue":
             return [d for d in deliverables if _was_in_queue_states(d, queue_states)]
 
-    if metric in _WD_METRICS:
+    if metric in WD_METRICS:
         if metric == "developers":
             result = [d for d in deliverables if d.developer is not None]
             if person:
@@ -643,7 +628,7 @@ def filter_deliverables_by_metric(
                 or (d.qa and d.qa.lower() in names)
             ]
 
-    if metric in _TD_METRICS:
+    if metric in TD_METRICS:
         if td_config is None:
             raise ValueError("td_config required for tech debt ratio metrics")
         delivered_canonical = td_config.delivered_canonical_status
