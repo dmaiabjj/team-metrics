@@ -88,6 +88,16 @@ class InitiativeDeliveryConfig(BaseModel):
     )
 
 
+class ReliabilityActionDeliveryConfig(BaseModel):
+    enabled: bool = True
+    description: str = ""
+    formula: str = ""
+    delivered_canonical_status: str = "Delivered"
+    rag: RAGThresholdsHigherIsBetter = Field(
+        default_factory=lambda: RAGThresholdsHigherIsBetter(green_min=0.85, amber_min=0.70)
+    )
+
+
 class TeamKPIOverrides(BaseModel):
     """Per-team overrides for KPI-related config (from kpis.yaml teams section)."""
     tech_debt_epic_ids: list[int] = Field(default_factory=list)
@@ -105,6 +115,9 @@ class KPIConfig(BaseModel):
     tech_debt_ratio: TechDebtRatioConfig
     initiative_delivery: InitiativeDeliveryConfig = Field(
         default_factory=lambda: InitiativeDeliveryConfig()
+    )
+    reliability_action_delivery: ReliabilityActionDeliveryConfig = Field(
+        default_factory=lambda: ReliabilityActionDeliveryConfig()
     )
 
 
@@ -126,6 +139,9 @@ class KPIsRootWithTeams(BaseModel):
     wip_discipline: WIPDisciplineConfig = Field(default_factory=WIPDisciplineConfig)
     tech_debt_ratio: TechDebtRatioConfig = Field(default_factory=TechDebtRatioConfig)
     initiative_delivery: InitiativeDeliveryConfig = Field(default_factory=InitiativeDeliveryConfig)
+    reliability_action_delivery: ReliabilityActionDeliveryConfig = Field(
+        default_factory=ReliabilityActionDeliveryConfig
+    )
     teams: dict[str, TeamKPIOverrides] = Field(default_factory=dict)
 
 

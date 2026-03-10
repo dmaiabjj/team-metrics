@@ -36,6 +36,7 @@ from app.services.kpi_service import (
     compute_flow_hygiene,
     compute_initiative_delivery,
     compute_kpi_average,
+    compute_reliability_action_delivery,
     compute_rework_rate,
     compute_tech_debt_ratio,
     compute_wip_discipline,
@@ -76,6 +77,7 @@ async def get_dashboard(
     all_wd_kpis = []
     all_td_kpis = []
     all_id_kpis = []
+    all_rad_kpis = []
     all_df_kpis = []
     all_lt_kpis = []
     dora_config = load_dora_config()
@@ -136,6 +138,12 @@ async def get_dashboard(
             )
             kpis.append(id_kpi)
             all_id_kpis.append(id_kpi)
+        if kpi_config.reliability_action_delivery.enabled:
+            rad_kpi = compute_reliability_action_delivery(
+                report.deliverables, kpi_config.reliability_action_delivery,
+            )
+            kpis.append(rad_kpi)
+            all_rad_kpis.append(rad_kpi)
         dora: list = []
         if dora_config.deploy_frequency.enabled:
             df_deployments = []
@@ -212,6 +220,13 @@ async def get_dashboard(
         kpi_averages.append(
             compute_kpi_average(
                 "initiative_delivery", all_id_kpis, kpi_config.initiative_delivery,
+            )
+        )
+    if kpi_config.reliability_action_delivery.enabled and all_rad_kpis:
+        kpi_averages.append(
+            compute_kpi_average(
+                "reliability_action_delivery", all_rad_kpis,
+                kpi_config.reliability_action_delivery,
             )
         )
 

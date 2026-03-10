@@ -14,6 +14,7 @@ from app.config.kpi_loader import (
     KPIConfig,
     RAGThresholds,
     RAGThresholdsHigherIsBetter,
+    ReliabilityActionDeliveryConfig,
     ReworkRateConfig,
     TechDebtRatioBandRAG,
     TechDebtRatioConfig,
@@ -27,6 +28,7 @@ from app.services.kpi_service import (
     compute_flow_hygiene,
     compute_initiative_delivery,
     compute_kpi_average,
+    compute_reliability_action_delivery,
     compute_rework_rate,
     compute_tech_debt_ratio,
     compute_wip_discipline,
@@ -1061,6 +1063,98 @@ class TestFilterTDMetrics:
     def test_td_config_required(self):
         with pytest.raises(ValueError, match="td_config required"):
             filter_deliverables_by_metric([], "tech_debt_deployed")
+
+
+# ---------------------------------------------------------------------------
+# Reliability Action Delivery
+# ---------------------------------------------------------------------------
+
+_DEFAULT_RAD_CONFIG = ReliabilityActionDeliveryConfig(
+    enabled=True,
+    delivered_canonical_status="Delivered",
+    rag=RAGThresholdsHigherIsBetter(green_min=0.85, amber_min=0.70),
+)
+
+
+class TestComputeReliabilityActionDelivery:
+    def test_empty_deliverables(self):
+        result = compute_reliability_action_delivery([], _DEFAULT_RAD_CONFIG)
+        assert result.name == "reliability_action_delivery"
+        assert result.value == 0.0
+        assert result.reliability_actions_sla_met == 0
+        assert result.reliability_actions_delivered == 0
+
+    def test_no_post_mortem_items(self):
+        items = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(5)
+        ]
+        result = compute_reliability_action_delivery(items, _DEFAULT_RAD_CONFIG)
+        assert result.reliability_actions_delivered == 0
+        assert result.reliability_actions_sla_met == 0
+        assert result.value == 0.0
+
+    def test_all_sla_met(self):
+        items = [
+            _make_deliverable(i, canonical_status="Delivered")
+            for i in range(3)
+        ]
+        for d in items:
+            d.is_post_mortem = True
+            d.post_mortem_sla_met = True
+        result = compute_reliability_action_delivery(items, _DEFAULT_RAD_CONFIG)
+        assert result.reliability_actions_delivered == 3
+        assert result.reliability_actions_sla_met == 3
+        assert result.value == 1.0
+        assert result.rag == RAGStatus.GREEN
+
+    def test_partial_sla_met(self):
+        items = [
+            _make_deliverable(1, canonical_status="Delivered"),
+            _make_deliverable(2, canonical_status="Delivered"),
+            _make_deliverable(3, canonical_status="Delivered"),
+        ]
+        for d in items:
+            d.is_post_mortem = True
+        items[0].post_mortem_sla_met = True
+        items[1].post_mortem_sla_met = False
+        items[2].post_mortem_sla_met = True
+        result = compute_reliability_action_delivery(items, _DEFAULT_RAD_CONFIG)
+        assert result.reliability_actions_delivered == 3
+        assert result.reliability_actions_sla_met == 2
+        assert result.value == pytest.approx(2 / 3, rel=1e-3)
+
+
+class TestFilterRADMetrics:
+    def test_reliability_actions_sla_met(self):
+        items = [
+            _make_deliverable(1, canonical_status="Delivered"),
+            _make_deliverable(2, canonical_status="Delivered"),
+        ]
+        for d in items:
+            d.is_post_mortem = True
+        items[0].post_mortem_sla_met = True
+        items[1].post_mortem_sla_met = False
+        result = filter_deliverables_by_metric(
+            items, "reliability_actions_sla_met", rad_config=_DEFAULT_RAD_CONFIG,
+        )
+        assert len(result) == 1
+        assert result[0].id == 1
+
+    def test_reliability_actions_sla_breached(self):
+        items = [
+            _make_deliverable(1, canonical_status="Delivered"),
+            _make_deliverable(2, canonical_status="Delivered"),
+        ]
+        for d in items:
+            d.is_post_mortem = True
+        items[0].post_mortem_sla_met = True
+        items[1].post_mortem_sla_met = False
+        result = filter_deliverables_by_metric(
+            items, "reliability_actions_sla_breached", rad_config=_DEFAULT_RAD_CONFIG,
+        )
+        assert len(result) == 1
+        assert result[0].id == 2
 
 
 # ---------------------------------------------------------------------------

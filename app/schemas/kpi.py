@@ -155,12 +155,33 @@ class InitiativeDeliveryKPI(BaseModel):
     )
 
 
+class ReliabilityActionDeliveryKPI(BaseModel):
+    name: str = "reliability_action_delivery"
+    value: float = Field(description="% of reliability actions delivered within SLA")
+    display: str = Field(description="Human-readable percentage (e.g. '90.0%')")
+    rag: RAGStatus
+    reliability_actions_sla_met: int = Field(
+        description="Deliverables under post_mortem_epic_ids delivered within SLA",
+    )
+    reliability_actions_delivered: int = Field(
+        description="Deliverables under post_mortem_epic_ids that were delivered",
+    )
+    thresholds: dict[str, str] = Field(
+        default_factory=lambda: {
+            "green": ">= 85%",
+            "amber": "70-85%",
+            "red": "< 70%",
+        }
+    )
+
+
 _KPI_TAG_MAP = {
     "delivery_predictability": "delivery_predictability",
     "flow_hygiene": "flow_hygiene",
     "wip_discipline": "wip_discipline",
     "tech_debt_ratio": "tech_debt_ratio",
     "initiative_delivery": "initiative_delivery",
+    "reliability_action_delivery": "reliability_action_delivery",
     "deploy_frequency": "deploy_frequency",
     "lead_time": "lead_time",
 }
@@ -179,6 +200,7 @@ KPIResult = Annotated[
         Annotated[WIPDisciplineKPI, Tag("wip_discipline")],
         Annotated[TechDebtRatioKPI, Tag("tech_debt_ratio")],
         Annotated[InitiativeDeliveryKPI, Tag("initiative_delivery")],
+        Annotated[ReliabilityActionDeliveryKPI, Tag("reliability_action_delivery")],
         Annotated[DeployFrequencyKPI, Tag("deploy_frequency")],
         Annotated[LeadTimeKPI, Tag("lead_time")],
     ],
@@ -266,6 +288,14 @@ class AverageKPI(BaseModel):
     initiatives_delivered: int | None = Field(
         default=None,
         description="Sum of initiatives delivered across teams (initiative_delivery only)",
+    )
+    reliability_actions_sla_met: int | None = Field(
+        default=None,
+        description="Sum of reliability actions delivered within SLA (reliability_action_delivery only)",
+    )
+    reliability_actions_delivered: int | None = Field(
+        default=None,
+        description="Sum of reliability actions delivered (reliability_action_delivery only)",
     )
 
 

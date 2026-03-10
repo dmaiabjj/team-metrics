@@ -472,6 +472,40 @@
       }
     },
     {
+      "name": "Team KPI Detail - Reliability Action Delivery",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/reliability-action-delivery?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "reliability-action-delivery"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Reliability Action Delivery KPI: % of post-mortem deliverables delivered within SLA."
+      }
+    },
+    {
+      "name": "Drilldown - Reliability Action Delivery / reliability_actions_sla_met",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/teams/{{team_id}}/kpis/reliability-action-delivery/drilldown/reliability_actions_sla_met?start_date={{start_date}}&end_date={{end_date}}",
+          "host": ["{{base_url}}"],
+          "path": ["teams", "{{team_id}}", "kpis", "reliability-action-delivery", "drilldown", "reliability_actions_sla_met"],
+          "query": [
+            {"key": "start_date", "value": "{{start_date}}", "description": "Start of period (ISO date)"},
+            {"key": "end_date", "value": "{{end_date}}", "description": "End of period (ISO date)"}
+          ]
+        },
+        "description": "Post-mortem deliverables delivered within SLA."
+      }
+    },
+    {
       "name": "Drilldown - Initiative Delivery / initiatives_committed",
       "request": {
         "method": "GET",

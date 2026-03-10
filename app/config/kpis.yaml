@@ -74,11 +74,20 @@ kpis:
       green_min: 0.85
       amber_min: 0.70
 
+  reliability_action_delivery:
+    enabled: true
+    description: "Percentage of reliability actions (post-mortem deliverables) delivered within SLA"
+    formula: "reliability_actions_sla_met / reliability_actions_delivered"
+    delivered_canonical_status: "Delivered"
+    rag:
+      green_min: 0.85
+      amber_min: 0.70
+
   teams:
     game-services:
       tech_debt_epic_ids: []
-      post_mortem_epic_ids: []
-      post_mortem_sla_weeks: 8
+      post_mortem_epic_ids: [3320,3419]
+      post_mortem_sla_weeks: 2
       wip_limits: {}
       initiative_ids: [3320,3419]
     domain-tooling-services:

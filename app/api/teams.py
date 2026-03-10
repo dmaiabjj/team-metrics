@@ -38,12 +38,14 @@ from app.services.kpi_service import (
     DP_METRICS,
     FH_METRICS,
     ID_METRICS,
+    RAD_METRICS,
     REWORK_METRICS,
     TD_METRICS,
     WD_METRICS,
     compute_delivery_predictability,
     compute_flow_hygiene,
     compute_initiative_delivery,
+    compute_reliability_action_delivery,
     compute_rework_rate,
     compute_tech_debt_ratio,
     compute_wip_discipline,
@@ -76,6 +78,7 @@ class KPIName(str, Enum):
     WIP_DISCIPLINE = "wip-discipline"
     TECH_DEBT_RATIO = "tech-debt-ratio"
     INITIATIVE_DELIVERY = "initiative-delivery"
+    RELIABILITY_ACTION_DELIVERY = "reliability-action-delivery"
     DEPLOY_FREQUENCY = "deploy-frequency"
     LEAD_TIME = "lead-time"
 
@@ -89,6 +92,7 @@ KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.WIP_DISCIPLINE: WD_METRICS,
     KPIName.TECH_DEBT_RATIO: TD_METRICS,
     KPIName.INITIATIVE_DELIVERY: ID_METRICS,
+    KPIName.RELIABILITY_ACTION_DELIVERY: RAD_METRICS,
     KPIName.DEPLOY_FREQUENCY: DF_METRICS,
     KPIName.LEAD_TIME: LT_METRICS,
 }
@@ -117,6 +121,10 @@ async def _compute_single_kpi(
             deliverables, kpi_config.initiative_delivery, tc,
             (id_overrides.initiative_ids if id_overrides else []),
             start_date, end_date,
+        )
+    if kpi_name == KPIName.RELIABILITY_ACTION_DELIVERY:
+        return compute_reliability_action_delivery(
+            deliverables, kpi_config.reliability_action_delivery,
         )
 
     if kpi_name == KPIName.DEPLOY_FREQUENCY:
@@ -259,6 +267,10 @@ async def get_team_kpis(
                 report.deliverables, kpi_config.initiative_delivery, tc,
                 id_overrides.initiative_ids, start_date, end_date,
             ))
+    if kpi_config.reliability_action_delivery.enabled:
+        kpis.append(compute_reliability_action_delivery(
+            report.deliverables, kpi_config.reliability_action_delivery,
+        ))
     dora: list = []
     dora_config = load_dora_config()
     if dora_config.deploy_frequency.enabled:
@@ -320,6 +332,7 @@ async def get_team_dora(
 @router.get(
     "/{team_id}/dora/deploy-frequency/drilldown/deployments",
     response_model=DrilldownResponse,
+    response_model_exclude_none=True,
     responses=_ERROR_RESPONSES,
 )
 @limiter.limit("30/minute")
@@ -367,6 +380,7 @@ async def get_dora_deploy_frequency_drilldown(
 @router.get(
     "/{team_id}/dora/lead-time/drilldown/measured_items",
     response_model=DrilldownResponse,
+    response_model_exclude_none=True,
     responses=_ERROR_RESPONSES,
 )
 @limiter.limit("30/minute")
@@ -400,6 +414,7 @@ async def get_dora_lead_time_drilldown(
 @router.get(
     "/{team_id}/dora/deploy-frequency",
     response_model=TeamKPIDetailResponse,
+    response_model_exclude_none=True,
     responses=_ERROR_RESPONSES,
 )
 @limiter.limit("30/minute")
@@ -489,6 +504,7 @@ async def get_dora_lead_time(
 @router.get(
     "/{team_id}/kpis/{kpi_name}",
     response_model=TeamKPIDetailResponse,
+    response_model_exclude_none=True,
     responses=_ERROR_RESPONSES,
 )
 @limiter.limit("30/minute")
@@ -558,6 +574,7 @@ async def get_team_kpi_detail(
                 td_config=kpi_config.tech_debt_ratio,
                 id_config=kpi_config.initiative_delivery if kpi_name == KPIName.INITIATIVE_DELIVERY else None,
                 id_overrides=id_overrides,
+                rad_config=kpi_config.reliability_action_delivery if kpi_name == KPIName.RELIABILITY_ACTION_DELIVERY else None,
                 team_config=tc if kpi_name in (KPIName.WIP_DISCIPLINE, KPIName.INITIATIVE_DELIVERY) else None,
                 start=start_date,
                 end=end_date,
@@ -566,7 +583,6 @@ async def get_team_kpi_detail(
                     seen_ids.add(d.id)
                     items.append(d)
         # For initiative_delivery, also include all deliverables under initiative_ids
-        # so the user sees the work even when committed/delivered counts are 0
         if kpi_name == KPIName.INITIATIVE_DELIVERY and id_overrides and id_overrides.initiative_ids:
             ids_filter = frozenset(id_overrides.initiative_ids)
             for d in report.deliverables:
@@ -576,6 +592,12 @@ async def get_team_kpi_detail(
                     seen_ids.add(d.id)
                     items.append(d)
                 elif d.parent_feature and d.parent_feature.id in ids_filter:
+                    seen_ids.add(d.id)
+                    items.append(d)
+        # For reliability_action_delivery, include all post-mortem deliverables
+        if kpi_name == KPIName.RELIABILITY_ACTION_DELIVERY:
+            for d in report.deliverables:
+                if d.is_post_mortem and d.id not in seen_ids:
                     seen_ids.add(d.id)
                     items.append(d)
 
@@ -593,6 +615,7 @@ async def get_team_kpi_detail(
 @router.get(
     "/{team_id}/kpis/{kpi_name}/drilldown/{metric}",
     response_model=DrilldownResponse,
+    response_model_exclude_none=True,
     responses=_ERROR_RESPONSES,
 )
 @limiter.limit("30/minute")
@@ -680,6 +703,7 @@ async def get_kpi_drilldown(
         td_config=kpi_config.tech_debt_ratio,
         id_config=kpi_config.initiative_delivery if kpi_name == KPIName.INITIATIVE_DELIVERY else None,
         id_overrides=id_overrides,
+        rad_config=kpi_config.reliability_action_delivery if kpi_name == KPIName.RELIABILITY_ACTION_DELIVERY else None,
         team_config=tc,
         start=start_date,
         end=end_date,

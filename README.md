@@ -808,12 +808,24 @@ teams:
 
 **Drilldown** supports `initiatives_committed` and `initiatives_delivered` metrics.
 
+### Reliability Action Delivery
+
+Measures the percentage of reliability actions (post-mortem deliverables under `post_mortem_epic_ids`) that were delivered within SLA.
+
+```
+reliability_action_delivery = reliability_actions_sla_met / reliability_actions_delivered
+```
+
+- **reliability_actions_delivered**: Deliverables under post_mortem epic IDs with `canonical_status == "Delivered"`
+- **reliability_actions_sla_met**: Subset delivered within `post_mortem_sla_weeks` (days from creation to Delivered)
+
+**Drilldown** supports `reliability_actions_sla_met` and `reliability_actions_sla_breached` metrics.
 
 | RAG   | Threshold      |
 | ----- | -------------- |
-| Green | ≥ 80%          |
-| Amber | 60–80%         |
-| Red   | < 60%          |
+| Green | ≥ 85%          |
+| Amber | 70–85%         |
+| Red   | < 70%          |
 
 
 All thresholds are configurable in `app/config/kpis.yaml`.

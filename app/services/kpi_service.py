@@ -10,6 +10,7 @@ from app.config.kpi_loader import (
     DeliveryPredictabilityConfig,
     FlowHygieneConfig,
     InitiativeDeliveryConfig,
+    ReliabilityActionDeliveryConfig,
     ReworkRateConfig,
     TechDebtRatioConfig,
     TeamKPIOverrides,
@@ -25,6 +26,7 @@ from app.schemas.kpi import (
     PersonWIPMetric,
     PersonWorkItem,
     RAGStatus,
+    ReliabilityActionDeliveryKPI,
     ReworkRateKPI,
     StateQueueMetric,
     TechDebtRatioKPI,
@@ -480,6 +482,38 @@ def compute_tech_debt_ratio(
 
 
 # ---------------------------------------------------------------------------
+# Reliability Action Delivery (Post-Mortem SLA Compliance)
+# ---------------------------------------------------------------------------
+
+def compute_reliability_action_delivery(
+    deliverables: list[DeliverableRow],
+    config: ReliabilityActionDeliveryConfig,
+) -> ReliabilityActionDeliveryKPI:
+    """Compute reliability action delivery: % of post-mortem deliverables delivered within SLA."""
+    delivered_canonical = config.delivered_canonical_status
+    in_scope = [
+        d for d in deliverables
+        if d.is_post_mortem and (d.canonical_status or "").strip() == delivered_canonical
+    ]
+    sla_met = sum(1 for d in in_scope if d.post_mortem_sla_met is True)
+    total = len(in_scope)
+    value = sla_met / total if total > 0 else 0.0
+    rag = _rag_higher_is_better(value, config)
+    return ReliabilityActionDeliveryKPI(
+        value=round(value, 4),
+        display=f"{value * 100:.1f}%",
+        rag=rag,
+        reliability_actions_sla_met=sla_met,
+        reliability_actions_delivered=total,
+        thresholds={
+            "green": f">= {config.rag.green_min * 100:.0f}%",
+            "amber": f"{config.rag.amber_min * 100:.0f}%-{config.rag.green_min * 100:.0f}%",
+            "red": f"< {config.rag.amber_min * 100:.0f}%",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Initiative Delivery (Delivery of Specific Initiatives)
 # ---------------------------------------------------------------------------
 
@@ -568,7 +602,7 @@ def compute_kpi_average(
 
     if isinstance(config, TechDebtRatioConfig):
         rag = _rag_band(avg, config)
-    elif isinstance(config, (DeliveryPredictabilityConfig, WIPDisciplineConfig, InitiativeDeliveryConfig)):
+    elif isinstance(config, (DeliveryPredictabilityConfig, WIPDisciplineConfig, InitiativeDeliveryConfig, ReliabilityActionDeliveryConfig)):
         rag = _rag_higher_is_better(avg, config)
     elif isinstance(config, FlowHygieneConfig):
         rag = _rag_flow_hygiene(avg, config)
@@ -583,6 +617,13 @@ def compute_kpi_average(
         )
         extra["initiatives_delivered"] = sum(
             getattr(k, "initiatives_delivered", 0) or 0 for k in team_kpis
+        )
+    if isinstance(config, ReliabilityActionDeliveryConfig) and team_kpis:
+        extra["reliability_actions_sla_met"] = sum(
+            getattr(k, "reliability_actions_sla_met", 0) or 0 for k in team_kpis
+        )
+        extra["reliability_actions_delivered"] = sum(
+            getattr(k, "reliability_actions_delivered", 0) or 0 for k in team_kpis
         )
     return AverageKPI(
         name=kpi_name,
@@ -622,7 +663,12 @@ ID_METRICS = frozenset({
     "initiatives_committed", "initiatives_delivered",
 })
 
-VALID_DRILLDOWN_METRICS = REWORK_METRICS | DP_METRICS | FH_METRICS | WD_METRICS | TD_METRICS | ID_METRICS
+RAD_METRICS = frozenset({
+    "reliability_actions_sla_met",
+    "reliability_actions_sla_breached",
+})
+
+VALID_DRILLDOWN_METRICS = REWORK_METRICS | DP_METRICS | FH_METRICS | WD_METRICS | TD_METRICS | ID_METRICS | RAD_METRICS
 
 
 def filter_deliverables_by_metric(
@@ -635,6 +681,7 @@ def filter_deliverables_by_metric(
     td_config: TechDebtRatioConfig | None = None,
     id_config: InitiativeDeliveryConfig | None = None,
     id_overrides: TeamKPIOverrides | None = None,
+    rad_config: ReliabilityActionDeliveryConfig | None = None,
     team_config: TeamConfig | None = None,
     start: date | None = None,
     end: date | None = None,
@@ -750,5 +797,17 @@ def filter_deliverables_by_metric(
             d for d in in_scope
             if (d.canonical_status or "").strip() == delivered_canonical
         ]
+
+    if metric in RAD_METRICS:
+        if rad_config is None:
+            raise ValueError("rad_config required for reliability action delivery metrics")
+        delivered_canonical = rad_config.delivered_canonical_status
+        in_scope = [
+            d for d in deliverables
+            if d.is_post_mortem and (d.canonical_status or "").strip() == delivered_canonical
+        ]
+        if metric == "reliability_actions_sla_met":
+            return [d for d in in_scope if d.post_mortem_sla_met is True]
+        return [d for d in in_scope if d.post_mortem_sla_met is False]
 
     return []

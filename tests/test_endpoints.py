@@ -168,6 +168,13 @@ class TestTeamKPIDetail:
         })
         assert r.status_code == 503
 
+    def test_no_azure_client_reliability_action_delivery(self, client):
+        r = client.get("/teams/game-services/kpis/reliability-action-delivery", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
     def test_no_azure_client_deploy_frequency(self, client):
         r = client.get("/teams/game-services/kpis/deploy-frequency", params={
             "start_date": "2025-01-01",
@@ -324,6 +331,14 @@ class TestDrilldown:
     def test_valid_id_metric_initiatives_committed(self, client):
         """initiatives_committed is a valid initiative-delivery metric."""
         r = client.get("/teams/game-services/kpis/initiative-delivery/drilldown/initiatives_committed", params={
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-31",
+        })
+        assert r.status_code == 503
+
+    def test_valid_rad_metric_reliability_actions_sla_met(self, client):
+        """reliability_actions_sla_met is a valid reliability-action-delivery metric."""
+        r = client.get("/teams/game-services/kpis/reliability-action-delivery/drilldown/reliability_actions_sla_met", params={
             "start_date": "2025-01-01",
             "end_date": "2025-01-31",
         })
