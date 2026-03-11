@@ -21,8 +21,9 @@ async def require_api_key(
 ) -> str | None:
     """Dependency that enforces API key auth when configured."""
     settings = get_settings()
-    if not settings.api_key:
+    configured_key = settings.api_key.get_secret_value()
+    if not configured_key:
         return None
-    if not api_key or not hmac.compare_digest(api_key, settings.api_key):
+    if not api_key or not hmac.compare_digest(api_key, configured_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return api_key

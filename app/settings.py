@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,7 +10,7 @@ class Settings(BaseSettings):
     )
 
     azure_devops_org: str = ""
-    azure_devops_pat: str = ""
+    azure_devops_pat: SecretStr = SecretStr("")
     azure_devops_project: str | None = None  # optional per-request override
 
     # Performance tuning
@@ -24,7 +25,8 @@ class Settings(BaseSettings):
     # Cache limits
     report_cache_max: int = 256
     wi_cache_max: int = 4096
-    cache_ttl_seconds: int = 0  # 0 = no TTL (infinite); set e.g. 3600 for 1 hour
+    cache_ttl_seconds: int = 600  # 10 min for L1 report cache
+    wi_cache_ttl_seconds: int = 1800  # 30 min for L2 work item cache
     azure_cache_max: int = 2048  # Azure API response cache
     azure_cache_ttl_seconds: int = 300  # 5 min default for Azure responses
     deployment_cache_max: int = 512  # DORA deployment cache
@@ -40,7 +42,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Security
-    api_key: str = ""
+    api_key: SecretStr = SecretStr("")
+
+    # CORS
+    cors_origins: list[str] = []
 
 
 @lru_cache(maxsize=1)

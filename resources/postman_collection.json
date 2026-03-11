@@ -142,7 +142,7 @@
             {"key": "limit", "value": "100", "description": "Max items (1-500)"}
           ]
         },
-        "description": "Deliverables that reached QA Active at any point."
+        "description": "Deliverables that reached Under QA at any point."
       }
     },
     {

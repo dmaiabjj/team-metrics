@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
@@ -59,7 +60,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.azure_cache = azure_cache
 
-    if settings.azure_devops_org and settings.azure_devops_pat:
+    if settings.azure_devops_org and settings.azure_devops_pat.get_secret_value():
         http_client = httpx.AsyncClient(
             timeout=settings.http_timeout,
             limits=httpx.Limits(
@@ -69,7 +70,7 @@ async def lifespan(app: FastAPI):
         )
         azure_client = AzureDevOpsClient(
             org=settings.azure_devops_org,
-            pat=settings.azure_devops_pat,
+            pat=settings.azure_devops_pat.get_secret_value(),
             http_client=http_client,
             azure_cache=azure_cache,
         )
@@ -79,7 +80,7 @@ async def lifespan(app: FastAPI):
 
     app.state.azure_client = azure_client
     app.state.report_cache = ReportCache(maxsize=settings.report_cache_max, ttl_seconds=settings.cache_ttl_seconds)
-    app.state.wi_cache = WorkItemCache(maxsize=settings.wi_cache_max, ttl_seconds=settings.cache_ttl_seconds)
+    app.state.wi_cache = WorkItemCache(maxsize=settings.wi_cache_max, ttl_seconds=settings.wi_cache_ttl_seconds)
     app.state.deployment_cache = DeploymentCache(
         maxsize=settings.deployment_cache_max,
         ttl_seconds=settings.deployment_cache_ttl_seconds,
@@ -106,6 +107,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
+
+# CORS middleware
+_settings = get_settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.cors_origins or ["*"],
+    allow_methods=["GET", "DELETE"],
+    allow_headers=["X-API-Key"],
+)
 
 
 @app.exception_handler(RateLimitExceeded)

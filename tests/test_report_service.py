@@ -59,7 +59,7 @@ def test_apply_inclusion_active_whole_period():
             "System.State": "Active",
         }
     }
-    real_to_canonical = {"Active": "Development Active", "Closed": "Delivered"}
+    real_to_canonical = {"Active": "Under Development", "Closed": "Delivered"}
     start = datetime(2025, 1, 1, tzinfo=_utc)
     end = datetime(2025, 1, 31, 23, 59, 59, tzinfo=_utc)
     assert _apply_inclusion([rev], start, end, real_to_canonical) is True
@@ -73,7 +73,7 @@ def test_apply_inclusion_outside_period_not_active():
             "System.State": "New",
         }
     }
-    real_to_canonical = {"New": "Backlog", "Active": "Development Active"}
+    real_to_canonical = {"New": "Backlog", "Active": "Under Development"}
     start = datetime(2025, 1, 1, tzinfo=_utc)
     end = datetime(2025, 1, 31, 23, 59, 59, tzinfo=_utc)
     assert _apply_inclusion([rev], start, end, real_to_canonical) is False
@@ -85,7 +85,7 @@ def test_apply_inclusion_transition_to_delivered_in_period():
         {"fields": {"System.ChangedDate": "2024-12-01T12:00:00Z", "System.State": "Active"}},
         {"fields": {"System.ChangedDate": "2025-01-20T10:00:00Z", "System.State": "Closed"}},
     ]
-    real_to_canonical = {"Active": "Development Active", "Closed": "Delivered"}
+    real_to_canonical = {"Active": "Under Development", "Closed": "Delivered"}
     start = datetime(2025, 1, 1, tzinfo=_utc)
     end = datetime(2025, 1, 31, 23, 59, 59, tzinfo=_utc)
     assert _apply_inclusion(revs, start, end, real_to_canonical) is True
@@ -96,7 +96,7 @@ def test_apply_inclusion_qa_active_in_period():
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-10T12:00:00Z", "System.State": "In QA"}},
     ]
-    real_to_canonical = {"In QA": "QA Active"}
+    real_to_canonical = {"In QA": "Under QA"}
     start = datetime(2025, 1, 1, tzinfo=_utc)
     end = datetime(2025, 1, 31, 23, 59, 59, tzinfo=_utc)
     assert _apply_inclusion(revs, start, end, real_to_canonical) is True
@@ -180,24 +180,25 @@ def test_config_canonical_status_mapping():
     teams = load_teams_config()
     t = teams["game-services"]
     r2c = t.real_state_to_canonical()
-    assert r2c.get("Active") == "Development Active"
-    assert r2c.get("In QA") == "QA Active"
+    assert r2c.get("Active") == "Under Development"
+    assert r2c.get("In QA") == "Under QA"
     assert r2c.get("Closed") == "Delivered"
 
 
 def test_config_payment_resolved_is_dev_active():
-    """Payment-services maps Resolved -> Development Active (different from other teams)."""
+    """Payment-services maps Resolved -> Under Development (different from other teams)."""
     teams = load_teams_config()
     t = teams["payment-services"]
     r2c = t.real_state_to_canonical()
-    assert r2c.get("Resolved") == "Development Active"
+    assert r2c.get("Resolved") == "Under Development"
 
 
 def test_config_all_teams_have_required_fields():
     teams = load_teams_config()
     for tid, t in teams.items():
         assert t.project, f"{tid}: missing project"
-        assert t.area_paths, f"{tid}: missing area_paths"
+        # area_paths can be empty (exclusions; empty = include all)
+        assert t.area_paths is not None, f"{tid}: missing area_paths"
         assert t.deliverable_types, f"{tid}: missing deliverable_types"
         assert t.container_types, f"{tid}: missing container_types"
         assert t.states, f"{tid}: missing states"
@@ -232,10 +233,10 @@ def test_revision_assigned_to_empty_string():
 # ---------------------------------------------------------------------------
 
 _ROLE_CANONICAL = {
-    "Active": "Development Active",
-    "Code Review": "Development Active",
-    "In QA": "QA Active",
-    "Ready for QA": "QA Active",
+    "Active": "Under Development",
+    "Code Review": "Under Development",
+    "In QA": "Under QA",
+    "Ready for QA": "Under QA",
     "Closed": "Delivered",
 }
 
@@ -314,7 +315,7 @@ def test_compute_role_assignments_single_revision():
                      "System.AssignedTo": "Alice"}},
     ]
     dev, qa, rm = _compute_role_assignments(revs, _ROLE_CANONICAL)
-    # Alice is the only person in Dev Active (via last-rev-to-now)
+    # Alice is the only person in Under Development (via last-rev-to-now)
     assert dev == "Alice"
     assert qa is None
     assert rm is None
@@ -355,10 +356,10 @@ def test_compute_status_timeline_basic():
     timeline = _compute_status_timeline(revs, _ROLE_CANONICAL)
     assert len(timeline) == 3
     assert timeline[0].state == "Active"
-    assert timeline[0].canonical_status == "Development Active"
+    assert timeline[0].canonical_status == "Under Development"
     assert timeline[0].assigned_to == "Alice"
     assert timeline[1].state == "In QA"
-    assert timeline[1].canonical_status == "QA Active"
+    assert timeline[1].canonical_status == "Under QA"
     assert timeline[2].state == "Closed"
     assert timeline[2].canonical_status == "Delivered"
 
@@ -441,8 +442,8 @@ def test_compute_boundary_statuses_empty():
 
 _TAG_CANONICAL = {
     "New": "Backlog",
-    "Active": "Development Active",
-    "In Review": "QA Active",
+    "Active": "Under Development",
+    "In Review": "Under QA",
     "Closed": "Delivered",
 }
 
@@ -619,7 +620,7 @@ def test_lifecycle_dates_same_day():
 
 
 def test_lifecycle_start_date_from_qa():
-    """start_date picks up QA Active if that's the first active canonical."""
+    """start_date picks up Under QA if that's the first active canonical."""
     revs = [
         {"fields": {"System.ChangedDate": "2025-01-01T00:00:00Z", "System.State": "New"}},
         {"fields": {"System.ChangedDate": "2025-01-08T00:00:00Z", "System.State": "In Review"}},

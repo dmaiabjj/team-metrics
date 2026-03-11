@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone
 from fastapi import HTTPException, Request
 
 from app.adapters.azure_devops import AzureDevOpsClient
+from app.cache import DeploymentCache
 from app.config.kpi_loader import FlowHygieneConfig
 from app.config.team_loader import DeployFrequencyTeamConfig, TeamConfig, load_teams_config
 from app.services.report_service import run_report
@@ -65,7 +66,7 @@ async def get_team_report(request: Request, team_id: str, start_date: date, end_
         raise HTTPException(
             status_code=504,
             detail=f"Report generation timed out after {settings.report_timeout}s",
-        )
+        ) from None
     return report
 
 
@@ -77,7 +78,7 @@ async def fetch_deploy_frequency_deployments(
     end_date: date,
     *,
     team_id: str | None = None,
-    deployment_cache: object | None = None,
+    deployment_cache: DeploymentCache | None = None,
 ) -> tuple[list[dict], str]:
     """Fetch deployments for deploy frequency based on config.
 
@@ -87,12 +88,14 @@ async def fetch_deploy_frequency_deployments(
 
     If team_id and deployment_cache are provided, checks deployment cache first.
     """
-    from app.cache import DeploymentCache
-
-    if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
+    if team_id and deployment_cache is not None:
         cached = deployment_cache.get(team_id, start_date, end_date)
         if cached is not None:
             return cached
+
+    def _store(deployments: list[dict], fmt: str) -> None:
+        if team_id and deployment_cache is not None:
+            deployment_cache.put(team_id, start_date, end_date, deployments, fmt)
 
     min_t = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
     max_t = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc)
@@ -102,8 +105,7 @@ async def fetch_deploy_frequency_deployments(
         deployments = await azure_client.get_release_deployments(
             project, min_t, max_t, definition_environment_ids=ids,
         )
-        if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
-            deployment_cache.put(team_id, start_date, end_date, deployments, "release")
+        _store(deployments, "release")
         return deployments, "release"
 
     if df_config.definition_ids and df_config.environment_name:
@@ -114,8 +116,7 @@ async def fetch_deploy_frequency_deployments(
             stage_name=df_config.environment_name,
         )
         if deployments:
-            if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
-                deployment_cache.put(team_id, start_date, end_date, deployments, "build")
+            _store(deployments, "build")
             return deployments, "build"
 
         # Fallback to Release API (classic pipelines).
@@ -125,8 +126,7 @@ async def fetch_deploy_frequency_deployments(
             df_config.environment_name,
         )
         if deployments:
-            if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
-                deployment_cache.put(team_id, start_date, end_date, deployments, "release")
+            _store(deployments, "release")
             return deployments, "release"
 
         # Final fallback to Environments API if environment_guid is configured.
@@ -135,28 +135,22 @@ async def fetch_deploy_frequency_deployments(
             records = await azure_client.get_environment_deployment_records(
                 env_project, df_config.environment_guid, min_t, max_t,
             )
-            if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
-                deployment_cache.put(team_id, start_date, end_date, records, "environment")
+            _store(records, "environment")
             return records, "environment"
 
-        empty: tuple[list[dict], str] = ([], "build")
-        if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
-            deployment_cache.put(team_id, start_date, end_date, empty[0], empty[1])
-        return empty
+        _store([], "build")
+        return [], "build"
 
     if df_config.definition_ids and df_config.environment_guid:
         env_project = df_config.environment_project or project
         records = await azure_client.get_environment_deployment_records(
             env_project, df_config.environment_guid, min_t, max_t,
         )
-        if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
-            deployment_cache.put(team_id, start_date, end_date, records, "environment")
+        _store(records, "environment")
         return records, "environment"
 
-    empty: tuple[list[dict], str] = ([], "release")
-    if team_id and deployment_cache is not None and isinstance(deployment_cache, DeploymentCache):
-        deployment_cache.put(team_id, start_date, end_date, empty[0], empty[1])
-    return empty
+    _store([], "release")
+    return [], "release"
 
 
 async def resolve_wip_limits(
@@ -225,5 +219,25 @@ async def fetch_all_reports(request: Request, start_date: date, end_date: date):
         raise HTTPException(
             status_code=504,
             detail=f"Report generation timed out after {settings.report_timeout}s",
-        )
+        ) from None
     return team_ids, results
+
+
+def get_report_cache(request: Request) -> "ReportCache | None":
+    """Typed accessor for report cache from app state."""
+    from app.cache import ReportCache
+    cache = getattr(request.app.state, "report_cache", None)
+    return cache if isinstance(cache, ReportCache) else None
+
+
+def get_wi_cache(request: Request) -> "WorkItemCache | None":
+    """Typed accessor for work item cache from app state."""
+    from app.cache import WorkItemCache
+    cache = getattr(request.app.state, "wi_cache", None)
+    return cache if isinstance(cache, WorkItemCache) else None
+
+
+def get_deployment_cache(request: Request) -> "DeploymentCache | None":
+    """Typed accessor for deployment cache from app state."""
+    cache = getattr(request.app.state, "deployment_cache", None)
+    return cache if isinstance(cache, DeploymentCache) else None

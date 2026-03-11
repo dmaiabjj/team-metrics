@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class StateMapping(BaseModel):
@@ -39,6 +39,13 @@ class DeployFrequencyTeamConfig(BaseModel):
 class TeamConfig(BaseModel):
     project: str
     area_paths: list[str] = Field(default_factory=list)
+
+    @field_validator("area_paths", mode="before")
+    @classmethod
+    def coerce_area_paths(cls, v: list[str] | None) -> list[str]:
+        if v is None:
+            return []
+        return v
     deliverable_types: list[str] = Field(default_factory=list)
     container_types: list[str] = Field(default_factory=list)
     bug_types: list[str] = Field(default_factory=list)

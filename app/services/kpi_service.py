@@ -356,11 +356,11 @@ def compute_wip_discipline(
                 continue
             assignee = assignee or "Unassigned"
             canonical = canonical_from_timeline or real_to_canonical.get(state)
-            if canonical == "Development Active":
+            if canonical == "Under Development":
                 dev_daily_totals[assignee][day_idx] += 1
                 dev_daily_per_state[assignee][state][day_idx] += 1
                 dev_item_ids[assignee].add(d.id)
-            elif canonical == "QA Active":
+            elif canonical == "Under QA":
                 qa_daily_totals[assignee][day_idx] += 1
                 qa_daily_per_state[assignee][state][day_idx] += 1
                 qa_item_ids[assignee].add(d.id)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timezone
 from enum import Enum
@@ -11,7 +12,9 @@ from app.api.helpers import (
     fetch_deploy_frequency_deployments,
     get_azure_client,
     get_team_report,
+    get_wi_cache,
     resolve_wip_limits,
+    validate_date_range,
 )
 from app.auth import require_api_key
 from app.config.dora_loader import get_deploy_frequency_config, load_dora_config
@@ -33,7 +36,7 @@ from app.services.dora_service import (
     filter_dora_metric,
 )
 from app.schemas.snapshot import SnapshotDrilldownResponse
-from app.schemas.report import ErrorResponse, WorkItemsResponse
+from app.schemas.report import DeliverableRow, ErrorResponse, WorkItemsResponse
 from app.services.kpi_service import (
     DP_METRICS,
     FH_METRICS,
@@ -51,6 +54,8 @@ from app.services.kpi_service import (
     compute_wip_discipline,
     filter_deliverables_by_metric,
 )
+from app.services.report_service import fetch_single_work_item, search_work_items
+from app.config.team_loader import load_teams_config
 from app.services.snapshot_service import (
     VALID_SNAPSHOT_METRICS,
     compute_delivery_snapshot,
@@ -83,8 +88,8 @@ class KPIName(str, Enum):
     LEAD_TIME = "lead-time"
 
 
-DF_METRICS = frozenset({"deployments"})
-LT_METRICS = frozenset({"measured_items"})
+DEPLOY_FREQ_METRICS = frozenset({"deployments"})
+LEAD_TIME_METRICS = frozenset({"measured_items"})
 KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.REWORK_RATE: REWORK_METRICS,
     KPIName.DELIVERY_PREDICTABILITY: DP_METRICS,
@@ -93,8 +98,8 @@ KPI_METRICS: dict[KPIName, frozenset[str]] = {
     KPIName.TECH_DEBT_RATIO: TD_METRICS,
     KPIName.INITIATIVE_DELIVERY: ID_METRICS,
     KPIName.RELIABILITY_ACTION_DELIVERY: RAD_METRICS,
-    KPIName.DEPLOY_FREQUENCY: DF_METRICS,
-    KPIName.LEAD_TIME: LT_METRICS,
+    KPIName.DEPLOY_FREQUENCY: DEPLOY_FREQ_METRICS,
+    KPIName.LEAD_TIME: LEAD_TIME_METRICS,
 }
 
 
@@ -214,6 +219,74 @@ async def get_work_items(
         total=total,
         items=report.deliverables[skip : skip + limit],
     )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: GET /teams/{team_id}/work-items/search (must be before {item_id})
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{team_id}/work-items/search",
+    response_model=WorkItemsResponse,
+    responses=_ERROR_RESPONSES,
+)
+@limiter.limit("30/minute")
+async def get_work_items_search(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    q: str = Query(..., min_length=1, description="Search query (ID or text)"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+) -> WorkItemsResponse:
+    """Search work items by ID or title. Fallback when not in period cache."""
+    validate_date_range(start_date, end_date)
+    teams = load_teams_config()
+    if team_id not in teams:
+        raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
+    client = get_azure_client(request)
+    wi_cache = get_wi_cache(request)
+    items = await search_work_items(
+        team_id, q, start_date, end_date, client, teams, wi_cache, limit=15
+    )
+    return WorkItemsResponse(
+        team_id=team_id,
+        start_date=start_date,
+        end_date=end_date,
+        total=len(items),
+        items=items,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: GET /teams/{team_id}/work-items/{item_id}
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{team_id}/work-items/{item_id}",
+    response_model=DeliverableRow,
+    responses={**_ERROR_RESPONSES, 404: {"model": ErrorResponse, "description": "Work item not found"}},
+)
+@limiter.limit("30/minute")
+async def get_work_item(
+    request: Request,
+    team_id: str = Path(..., description="Team slug"),
+    item_id: int = Path(..., description="Work item ID"),
+    start_date: date = Query(..., description="Start of period (inclusive)"),
+    end_date: date = Query(..., description="End of period (inclusive)"),
+) -> DeliverableRow:
+    """Fetch a single work item by ID (period-independent). For detail page and search fallback."""
+    validate_date_range(start_date, end_date)
+    teams = load_teams_config()
+    if team_id not in teams:
+        raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
+    client = get_azure_client(request)
+    wi_cache = get_wi_cache(request)
+    item = await fetch_single_work_item(
+        team_id, item_id, start_date, end_date, client, teams, wi_cache
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"Work item #{item_id} not found")
+    return item
 
 
 # ---------------------------------------------------------------------------

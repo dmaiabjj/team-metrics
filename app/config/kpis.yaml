@@ -9,7 +9,7 @@ kpis:
     rework_tags:
       - "Code Defect"
       - "Scope / Requirements"
-    qa_canonical_status: "QA Active"
+    qa_canonical_status: "Under QA"
 
   delivery_predictability:
     enabled: true
@@ -86,10 +86,10 @@ kpis:
   teams:
     game-services:
       tech_debt_epic_ids: []
-      post_mortem_epic_ids: [3320,3419]
-      post_mortem_sla_weeks: 2
+      post_mortem_epic_ids: []
+      post_mortem_sla_weeks: 8
       wip_limits: {}
-      initiative_ids: [3320,3419]
+      initiative_ids: []
     domain-tooling-services:
       tech_debt_epic_ids: []
       post_mortem_epic_ids: []

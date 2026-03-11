@@ -449,8 +449,8 @@ Each deliverable includes three role fields computed from revision history:
 
 | Field             | Logic                                                                     |
 | ----------------- | ------------------------------------------------------------------------- |
-| `developer`       | Person assigned for the longest time during **Development Active** states |
-| `qa`              | Person assigned for the longest time during **QA Active** states          |
+| `developer`       | Person assigned for the longest time during **Under Development** states |
+| `qa`              | Person assigned for the longest time during **Under QA** states          |
 | `release_manager` | Person assigned for the longest time during **Delivered** states          |
 
 
@@ -479,7 +479,7 @@ Each deliverable includes tags, boolean flags, and bounce tracking:
 | ---------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `Code Defect`          | The work item has one or more linked child bugs (`child_bugs` non-empty).                                       |
 | `Scope / Requirements` | The item bounced back at least once (`bounces > 0`).                                                            |
-| `Spillover`            | The item was in **Development Active** or **QA Active** at the start of the queried period (`status_at_start`). |
+| `Spillover`            | The item was in **Under Development** or **Under QA** at the start of the queried period (`status_at_start`). |
 
 
 A deliverable can have multiple tags simultaneously (e.g. both `Code Defect` and `Spillover`).
@@ -845,8 +845,8 @@ The five default teams are: **game-services**, **domain-tooling-services**, **pa
 
 | Canonical status   | Example real states                  |
 | ------------------ | ------------------------------------ |
-| Development Active | Active, Onhold, Blocked, Code Review |
-| QA Active          | Ready for QA, In QA, QA bug pending  |
+| Under Development | Active, Onhold, Blocked, Code Review |
+| Under QA          | Ready for QA, In QA, QA bug pending  |
 | Delivered          | Release Candidate, Closed, Resolved  |
 | Backlog            | New, Ready                           |
 

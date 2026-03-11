@@ -27,7 +27,7 @@ class ReworkRateConfig(BaseModel):
     formula: str = ""
     rag: RAGThresholds
     rework_tags: list[str] = Field(default_factory=list)
-    qa_canonical_status: str = "QA Active"
+    qa_canonical_status: str = "Under QA"
 
 
 class DeliveryPredictabilityConfig(BaseModel):

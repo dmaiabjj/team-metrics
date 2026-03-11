@@ -8,8 +8,9 @@ from datetime import date, datetime, timezone
 
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.cache import ReportCache, WorkItemCache
-from app.config.kpi_loader import get_team_kpi_overrides
+from app.config.kpi_loader import get_team_kpi_overrides, load_kpi_config
 from app.config.team_loader import TeamConfig, get_team_config, load_teams_config
+from app.services.common import date_in_range
 from app.schemas.report import BounceDetail, DeliverableRow, ReportResponse, StatusTimelineEntry, WorkItemRef
 from app.settings import get_settings
 
@@ -22,8 +23,8 @@ logger = logging.getLogger(__name__)
 REL_PARENT = "System.LinkTypes.Hierarchy-Reverse"
 REL_CHILD = "System.LinkTypes.Hierarchy-Forward"
 
-ACTIVE_CANONICAL = frozenset({"Development Active", "QA Active"})
-ACTIVE_OR_DELIVERED_CANONICAL = frozenset({"Development Active", "QA Active", "Delivered"})
+ACTIVE_CANONICAL = frozenset({"Under Development", "Under QA"})
+ACTIVE_OR_DELIVERED_CANONICAL = frozenset({"Under Development", "Under QA", "Delivered"})
 
 MAX_PARENT_DEPTH = 5  # guard against infinite loops in hierarchy walk
 
@@ -89,6 +90,16 @@ def _work_item_description(wi: dict) -> str | None:
     return None
 
 
+def _work_item_area_path(wi: dict) -> str | None:
+    raw = (wi.get("fields") or {}).get("System.AreaPath")
+    return raw.strip() if isinstance(raw, str) and raw.strip() else None
+
+
+def _work_item_team_project(wi: dict) -> str | None:
+    raw = (wi.get("fields") or {}).get("System.TeamProject")
+    return raw.strip() if isinstance(raw, str) and raw.strip() else None
+
+
 def _revision_assigned_to(rev: dict) -> str | None:
     """Extract display name from System.AssignedTo (may be dict or string)."""
     raw = (rev.get("fields") or {}).get("System.AssignedTo")
@@ -142,7 +153,7 @@ def _compute_lifecycle_dates(
     """Extract key lifecycle timestamps from pre-sorted revision history.
 
     date_created: timestamp of the first revision (creation).
-    start_date: timestamp when the item first entered Development Active or QA Active.
+    start_date: timestamp when the item first entered Under Development or Under QA.
     finish_date: latest date the item entered Delivered, only if the item's final
                  state is still Delivered. If it bounced back, finish_date is None.
     delivery_days: calendar days from date_created to finish_date (None if not delivered).
@@ -197,8 +208,9 @@ def _apply_inclusion(
     real_to_canonical: dict[str, str],
 ) -> bool:
     """Include if:
-    - Rule 1: any revision in period has canonical Development Active / QA Active / Delivered
-    - Rule 2: state_at_start in Active/QA AND state_at_end in Active/QA/Delivered
+    - Rule 1: any revision in period that is a STATE CHANGE into Under Dev/QA/Delivered
+      (excludes non-state edits like comments that create revisions with same state)
+    - Rule 2: state_at_start in Active/QA AND state_at_end in Active/QA/Delivered (spillover)
     """
     if not sorted_revs:
         return False
@@ -206,6 +218,7 @@ def _apply_inclusion(
     state_at_start: str | None = None
     state_at_end: str | None = None
     revisions_in_period: list[dict] = []
+    prev_state: str | None = None
 
     for rev in sorted_revs:
         changed = _parse_revision_date(rev)
@@ -217,15 +230,20 @@ def _apply_inclusion(
         if changed <= end_dt:
             state_at_end = state
         if start_dt <= changed <= end_dt:
-            revisions_in_period.append(rev)
+            revisions_in_period.append((rev, prev_state))
+        prev_state = state
 
     def canon(s: str) -> str | None:
         return real_to_canonical.get(s) if s else None
 
-    # Rule 1: any revision in period with active/delivered canonical
-    for rev in revisions_in_period:
-        c = canon(_revision_state(rev))
-        if c and c in ACTIVE_OR_DELIVERED_CANONICAL:
+    # Rule 1: state-change revision in period with active/delivered canonical
+    # (first revision in period has no prev_state -> treat as state change if created in period)
+    for rev, prev in revisions_in_period:
+        state = _revision_state(rev)
+        c = canon(state)
+        if not c or c not in ACTIVE_OR_DELIVERED_CANONICAL:
+            continue
+        if prev is None or prev != state:
             return True
 
     # Rule 2: state spanning the period
@@ -246,8 +264,8 @@ def _apply_inclusion(
 # ---------------------------------------------------------------------------
 
 CANONICAL_TO_ROLE = {
-    "Development Active": "developer",
-    "QA Active": "qa",
+    "Under Development": "developer",
+    "Under QA": "qa",
     "Delivered": "release_manager",
 }
 
@@ -343,8 +361,8 @@ def _compute_bounces(
         rev_num = rev.get("rev", 0)
 
         if (
-            prev_canon in ("QA Active", "Delivered")
-            and canon in ("Development Active", "Backlog")
+            prev_canon in ("Under QA", "Delivered")
+            and canon in ("Under Development", "Backlog")
         ):
             dt = _parse_revision_date(rev) or _MIN_DT
             details.append(BounceDetail(
@@ -371,7 +389,7 @@ def _compute_tags(
     """Compute deliverable tags, has_rework, and is_spillover.
 
     Tags: 'Code Defect' (linked bugs), 'Scope / Requirements' (bounced back at least once),
-    'Spillover' (in Development Active or QA Active before the period).
+    'Spillover' (in Under Development or Under QA before the period).
     has_rework is True when 'Code Defect' or 'Scope / Requirements' is in tags.
     Returns (has_rework, is_spillover, tags).
     """
@@ -384,7 +402,7 @@ def _compute_tags(
 
     if status_at_start is not None:
         canon_start = real_to_canonical.get(status_at_start)
-        if canon_start in ("Development Active", "QA Active"):
+        if canon_start in ("Under Development", "Under QA"):
             tags.append(TAG_SPILLOVER)
 
     has_rework = TAG_CODE_DEFECT in tags or TAG_SCOPE_REQUIREMENTS in tags
@@ -583,6 +601,10 @@ async def run_report(
         )
 
     kpi_overrides = get_team_kpi_overrides(team_id)
+    kpi_config = load_kpi_config()
+    delivered_canonical = kpi_config.delivery_predictability.delivered_canonical_status
+    qa_canonical = kpi_config.rework_rate.qa_canonical_status
+    rework_tags = kpi_config.rework_rate.rework_tags
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
     real_to_canonical = team.real_state_to_canonical()
@@ -703,6 +725,15 @@ async def run_report(
 
         lifecycle = _compute_lifecycle_dates(revs, real_to_canonical)
 
+        is_committed = is_spillover or date_in_range(lifecycle.start_date, start_date, end_date)
+        is_delivered = is_committed and (
+            (canonical_status or "").strip() == delivered_canonical
+        )
+        reached_qa = any(
+            (e.canonical_status or "") == qa_canonical for e in status_timeline
+        )
+        is_rework_item = reached_qa and any(t in rework_tags for t in tags)
+
         post_mortem_sla_met: bool | None = None
         if is_post_mortem and kpi_overrides.post_mortem_sla_weeks is not None:
             if lifecycle.delivery_days is not None:
@@ -718,6 +749,8 @@ async def run_report(
                 title=_work_item_title(wi),
                 description=_work_item_description(wi),
                 state=state,
+                team_project=_work_item_team_project(wi) or team.project,
+                area_path=_work_item_area_path(wi),
                 canonical_status=canonical_status if canonical_status != "Unknown" else None,
                 date_created=lifecycle.date_created,
                 start_date=lifecycle.start_date,
@@ -734,6 +767,9 @@ async def run_report(
                 release_manager=release_manager,
                 has_rework=has_rework,
                 is_spillover=is_spillover,
+                is_committed=is_committed,
+                is_delivered=is_delivered,
+                is_rework_item=is_rework_item,
                 bounces=bounce_count,
                 bounce_details=bounce_details,
                 is_technical_debt=is_technical_debt,
@@ -756,3 +792,179 @@ async def run_report(
     if report_cache is not None:
         report_cache.put(team_id, start_date, end_date, response)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Single work item fetch (period-independent, for detail page and search fallback)
+# ---------------------------------------------------------------------------
+
+async def fetch_single_work_item(
+    team_id: str,
+    item_id: int,
+    start_date: date,
+    end_date: date,
+    client: AzureDevOpsClient,
+    teams: dict[str, TeamConfig] | None = None,
+    wi_cache: WorkItemCache | None = None,
+) -> DeliverableRow | None:
+    """Fetch and enrich a single work item by ID, regardless of period.
+
+    Used when the item is not in the period report (e.g. parent Epic, child Bug).
+    Period params are used to compute is_spillover, is_delivered, etc.
+    """
+    if teams is None:
+        teams = load_teams_config()
+    team = get_team_config(team_id, teams)
+    if not team:
+        return None
+
+    wi = await client.get_work_item(team.project, item_id)
+    if not wi:
+        return None
+
+    kpi_overrides = get_team_kpi_overrides(team_id)
+    kpi_config = load_kpi_config()
+    delivered_canonical = kpi_config.delivery_predictability.delivered_canonical_status
+    qa_canonical = kpi_config.rework_rate.qa_canonical_status
+    rework_tags = kpi_config.rework_rate.rework_tags
+    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
+    real_to_canonical = team.real_state_to_canonical()
+
+    revs = await client.get_revisions(team.project, item_id)
+    sorted_revs = _prepare_revisions(revs)
+    by_id: dict[int, dict] = {wi["id"]: wi}
+
+    epic_ref, feature_ref = await _resolve_parents(client, team.project, wi, team, wi_cache)
+    child_bugs, child_tasks, _ = await _collect_children(
+        client, team.project, wi, by_id, team, wi_cache
+    )
+
+    wid = wi.get("id")
+    if not wid:
+        return None
+
+    state = _work_item_state(wi)
+    canonical_status = real_to_canonical.get(state) or "Unknown"
+
+    developer, qa, release_manager = _compute_role_assignments(sorted_revs, real_to_canonical)
+    status_timeline = _compute_status_timeline(sorted_revs, real_to_canonical)
+    status_at_start, status_at_end = _compute_boundary_statuses(sorted_revs, start_dt, end_dt)
+    bounce_count, bounce_details = _compute_bounces(sorted_revs, real_to_canonical)
+    child_bug_ids = [b.id for b in child_bugs]
+    has_rework, is_spillover, tags = _compute_tags(
+        real_to_canonical, child_bug_ids, status_at_start, bounce_count,
+    )
+
+    parent_epic_id = epic_ref.id if epic_ref else None
+    is_technical_debt = (
+        parent_epic_id is not None and parent_epic_id in kpi_overrides.tech_debt_epic_ids
+    )
+    is_post_mortem = (
+        parent_epic_id is not None and parent_epic_id in kpi_overrides.post_mortem_epic_ids
+    )
+
+    lifecycle = _compute_lifecycle_dates(sorted_revs, real_to_canonical)
+
+    is_committed = is_spillover or date_in_range(lifecycle.start_date, start_date, end_date)
+    is_delivered = is_committed and (
+        (canonical_status or "").strip() == delivered_canonical
+    )
+    reached_qa = any(
+        (e.canonical_status or "") == qa_canonical for e in status_timeline
+    )
+    is_rework_item = reached_qa and any(t in rework_tags for t in tags)
+
+    post_mortem_sla_met: bool | None = None
+    if is_post_mortem and kpi_overrides.post_mortem_sla_weeks is not None:
+        if lifecycle.delivery_days is not None:
+            sla_days = kpi_overrides.post_mortem_sla_weeks * 7
+            post_mortem_sla_met = lifecycle.delivery_days <= sla_days
+        else:
+            post_mortem_sla_met = False
+
+    return DeliverableRow(
+        id=wid,
+        work_item_type=_work_item_type(wi),
+        title=_work_item_title(wi),
+        description=_work_item_description(wi),
+        state=state,
+        team_project=_work_item_team_project(wi) or team.project,
+        area_path=_work_item_area_path(wi),
+        canonical_status=canonical_status if canonical_status != "Unknown" else None,
+        date_created=lifecycle.date_created,
+        start_date=lifecycle.start_date,
+        finish_date=lifecycle.finish_date,
+        status_at_start=status_at_start,
+        status_at_end=status_at_end,
+        status_timeline=status_timeline,
+        parent_epic=epic_ref,
+        parent_feature=feature_ref,
+        child_bugs=child_bugs,
+        child_tasks=child_tasks,
+        developer=developer,
+        qa=qa,
+        release_manager=release_manager,
+        has_rework=has_rework,
+        is_spillover=is_spillover,
+        is_committed=is_committed,
+        is_delivered=is_delivered,
+        is_rework_item=is_rework_item,
+        bounces=bounce_count,
+        bounce_details=bounce_details,
+        is_technical_debt=is_technical_debt,
+        is_post_mortem=is_post_mortem,
+        post_mortem_sla_met=post_mortem_sla_met,
+        delivery_days=lifecycle.delivery_days,
+        tags=tags,
+    )
+
+
+async def search_work_items(
+    team_id: str,
+    q: str,
+    start_date: date,
+    end_date: date,
+    client: AzureDevOpsClient,
+    teams: dict[str, TeamConfig] | None = None,
+    wi_cache: WorkItemCache | None = None,
+    limit: int = 15,
+) -> list[DeliverableRow]:
+    """Search work items by ID (numeric) or title (text). Returns enriched DeliverableRows."""
+    q = (q or "").strip()
+    if not q:
+        return []
+
+    if teams is None:
+        teams = load_teams_config()
+    team = get_team_config(team_id, teams)
+    if not team:
+        return []
+
+    if q.isdigit():
+        item_id = int(q)
+        item = await fetch_single_work_item(
+            team_id, item_id, start_date, end_date, client, teams, wi_cache
+        )
+        return [item] if item else []
+
+    changed_since = date(start_date.year, 1, 1)
+    candidate_ids = await client.wiql_search_by_title(
+        team.project,
+        team.area_paths,
+        team.deliverable_types,
+        q,
+        changed_since=changed_since,
+        top=limit,
+    )
+    if not candidate_ids:
+        return []
+
+    results: list[DeliverableRow] = []
+    for wid in candidate_ids[:limit]:
+        item = await fetch_single_work_item(
+            team_id, wid, start_date, end_date, client, teams, wi_cache
+        )
+        if item:
+            results.append(item)
+    return results

@@ -60,7 +60,7 @@ def _make_deliverable(
             StatusTimelineEntry(
                 date=start_date or datetime(2025, 1, 1, tzinfo=timezone.utc),
                 state="Active",
-                canonical_status="Development Active",
+                canonical_status="Under Development",
             ),
             StatusTimelineEntry(
                 date=finish_date or datetime(2025, 1, 10, tzinfo=timezone.utc),
@@ -149,7 +149,7 @@ class TestComputeLeadTime:
         delivered = _make_deliverable(1, "Delivered", start, finish, start, False)
         delivered.start_date = start
         delivered.finish_date = finish
-        not_delivered = _make_deliverable(2, "Development Active", start, None, start, False)
+        not_delivered = _make_deliverable(2, "Under Development", start, None, start, False)
         not_delivered.finish_date = None
         result = compute_lead_time(
             [delivered, not_delivered], _LT_CONFIG, date(2025, 1, 1), date(2025, 1, 31),

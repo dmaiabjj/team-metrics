@@ -1,11 +1,10 @@
+# area_paths = EXCLUSIONS: items under these paths are excluded from reports.
+# Empty = include all items in the project.
 teams:
   game-services:
     project: "game-services"
     azure_team: "game-services Team"
-    area_paths:
-      - "game-services"
-      - "game-services\\Game Proxy Development"
-      - "game-services\\Games Developers"
+    area_paths: []  # add paths to exclude
     deliverable_types:
       - "User Story"
       - "Issue"
@@ -16,13 +15,13 @@ teams:
     bug_types:
       - "Bug"
     states:
-      - canonical_status: "Development Active"
+      - canonical_status: "Under Development"
         real_states:
           - "Active"
           - "Onhold"
           - "Blocked"
           - "Code Review"
-      - canonical_status: "QA Active"
+      - canonical_status: "Under QA"
         real_states:
           - "Ready for QA"
           - "In QA"
@@ -40,9 +39,9 @@ teams:
   domain-tooling-services:
     project: "domain-tooling-services"
     azure_team: "domain-tooling-services Team"
-    area_paths:
-      - "domain-tooling-services"
-      - "domain-tooling-services\\BackOffice Team"
+    area_paths: 
+      - "domain-tooling-services\\Backoffice Host Team"
+
     deliverable_types:
       - "User Story"
       - "Issue"
@@ -53,13 +52,13 @@ teams:
     bug_types:
       - "Bug"
     states:
-      - canonical_status: "Development Active"
+      - canonical_status: "Under Development"
         real_states:
           - "Active"
           - "Onhold"
           - "Blocked"
           - "Code Review"
-      - canonical_status: "QA Active"
+      - canonical_status: "Under QA"
         real_states:
           - "Ready for QA"
           - "In QA"
@@ -77,18 +76,7 @@ teams:
   payment-services:
     project: "payment-services"
     azure_team: "payment-services Team"
-    area_paths:
-      - "payment-services"
-      - "payment-services\\backend"
-      - "payment-services\\frontend"
-      - "payment-services\\frontend\\cashier"
-      - "payment-services\\frontend\\legacy-web"
-      - "payment-services\\frontend\\payment-admin-ui"
-      - "payment-services\\frontend\\payment-backoffice"
-      # "payment-services\\integration\\dod"  -- removed: area path does not exist in Azure DevOps (TF51011)
-      - "payment-services\\operations\\alerts"
-      - "payment-services\\operations\\hot-issues"
-      - "payment-services\\operations\\support-tickets"
+    area_paths: []  # add paths to exclude
     deliverable_types:
       - "User Story"
       - "Issue"
@@ -99,14 +87,14 @@ teams:
     bug_types:
       - "Bug"
     states:
-      - canonical_status: "Development Active"
+      - canonical_status: "Under Development"
         real_states:
           - "Active"
           - "Onhold"
           - "Blocked"
           - "Code Review"
           - "Resolved"
-      - canonical_status: "QA Active"
+      - canonical_status: "Under QA"
         real_states:
           - "Ready for QA"
           - "In QA"
@@ -123,27 +111,23 @@ teams:
   player-engagement-services:
     project: "player-engagement-services"
     azure_team: "Bonus Engine Team"
-    area_paths:
-      - "player-engagement-services"
-      - "player-engagement-services\\Data Analytics"
-      - "player-engagement-services\\Payment Team"
+    area_paths: []  # add paths to exclude
     deliverable_types:
       - "User Story"
       - "Issue"
-      - "Task"
     container_types:
       - "Epic"
       - "Feature"
     bug_types:
       - "Bug"
     states:
-      - canonical_status: "Development Active"
+      - canonical_status: "Under Development"
         real_states:
           - "Active"
           - "Onhold"
           - "Blocked"
           - "Code Review"
-      - canonical_status: "QA Active"
+      - canonical_status: "Under QA"
         real_states:
           - "Ready for QA"
           - "In QA"
@@ -161,8 +145,7 @@ teams:
   rules-engine:
     project: "rules-engine"
     azure_team: "Rules Engine Developers"
-    area_paths:
-      - "rules-engine"
+    area_paths: []  # add paths to exclude
     deliverable_types:
       - "User Story"
       - "Issue"
@@ -173,13 +156,13 @@ teams:
     bug_types:
       - "Bug"
     states:
-      - canonical_status: "Development Active"
+      - canonical_status: "Under Development"
         real_states:
           - "Active"
           - "Onhold"
           - "Blocked"
           - "Code Review"
-      - canonical_status: "QA Active"
+      - canonical_status: "Under QA"
         real_states:
           - "Ready for QA"
           - "In QA"

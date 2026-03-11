@@ -36,6 +36,8 @@ class DeliverableRow(BaseModel):
     title: str
     description: str | None = None
     state: str
+    team_project: str | None = None
+    area_path: str | None = None
     canonical_status: str | None = None
     date_created: datetime | None = None
     start_date: datetime | None = None
@@ -56,7 +58,7 @@ class DeliverableRow(BaseModel):
     )
     is_spillover: bool = Field(
         default=False,
-        description="True if the item was in Development Active or QA Active at the start of the period.",
+        description="True if the item was in Under Development or Under QA at the start of the period.",
     )
     bounces: int = Field(
         default=0,
@@ -85,6 +87,18 @@ class DeliverableRow(BaseModel):
     tags: list[str] = Field(
         default_factory=list,
         description="Tags: 'Code Defect' (linked bugs), 'Scope / Requirements' (returned to active after QA/Delivered), 'Spillover' (in dev or QA before period).",
+    )
+    is_committed: bool = Field(
+        default=False,
+        description="True if spillover or started in period (matches delivery snapshot committed).",
+    )
+    is_delivered: bool = Field(
+        default=False,
+        description="True if committed and canonical_status == Delivered (matches delivery snapshot).",
+    )
+    is_rework_item: bool = Field(
+        default=False,
+        description="True if reached QA and has rework tags (matches delivery snapshot rework_items).",
     )
 
 

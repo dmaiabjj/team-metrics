@@ -42,7 +42,7 @@ _DEFAULT_CONFIG = ReworkRateConfig(
     formula="test",
     rag=RAGThresholds(green_max=0.10, amber_max=0.15),
     rework_tags=["Code Defect", "Scope / Requirements"],
-    qa_canonical_status="QA Active",
+    qa_canonical_status="Under QA",
 )
 
 _DEFAULT_DP_CONFIG = DeliveryPredictabilityConfig(
@@ -104,7 +104,7 @@ class TestComputeReworkRate:
         assert result.items_with_rework == 0
 
     def test_all_reached_qa_none_rework(self):
-        items = [_make_deliverable(i, ["Development Active", "QA Active"]) for i in range(10)]
+        items = [_make_deliverable(i, ["Under Development", "Under QA"]) for i in range(10)]
         result = compute_rework_rate(items, _DEFAULT_CONFIG)
         assert result.value == 0.0
         assert result.rag == RAGStatus.GREEN
@@ -112,7 +112,7 @@ class TestComputeReworkRate:
         assert result.items_with_rework == 0
 
     def test_boundary_green(self):
-        qa_items = [_make_deliverable(i, ["QA Active"]) for i in range(50)]
+        qa_items = [_make_deliverable(i, ["Under QA"]) for i in range(50)]
         qa_items[0].tags = ["Code Defect"]
         qa_items[1].tags = ["Code Defect"]
         qa_items[2].tags = ["Code Defect"]
@@ -125,7 +125,7 @@ class TestComputeReworkRate:
         assert result.items_reached_qa == 50
 
     def test_amber_range(self):
-        qa_items = [_make_deliverable(i, ["QA Active"]) for i in range(100)]
+        qa_items = [_make_deliverable(i, ["Under QA"]) for i in range(100)]
         for i in range(12):
             qa_items[i].tags = ["Code Defect"]
         result = compute_rework_rate(qa_items, _DEFAULT_CONFIG)
@@ -133,7 +133,7 @@ class TestComputeReworkRate:
         assert result.rag == RAGStatus.AMBER
 
     def test_red_above_threshold(self):
-        qa_items = [_make_deliverable(i, ["QA Active"]) for i in range(50)]
+        qa_items = [_make_deliverable(i, ["Under QA"]) for i in range(50)]
         for i in range(12):
             qa_items[i].tags = ["Code Defect"]
         result = compute_rework_rate(qa_items, _DEFAULT_CONFIG)
@@ -142,8 +142,8 @@ class TestComputeReworkRate:
 
     def test_scope_requirements_counts_as_rework(self):
         items = [
-            _make_deliverable(1, ["QA Active"], tags=["Scope / Requirements"], bounces=1),
-            _make_deliverable(2, ["QA Active"]),
+            _make_deliverable(1, ["Under QA"], tags=["Scope / Requirements"], bounces=1),
+            _make_deliverable(2, ["Under QA"]),
         ]
         result = compute_rework_rate(items, _DEFAULT_CONFIG)
         assert result.items_with_rework == 1
@@ -151,11 +151,11 @@ class TestComputeReworkRate:
 
     def test_bug_count_aggregation(self):
         items = [
-            _make_deliverable(1, ["QA Active"], child_bugs=[
+            _make_deliverable(1, ["Under QA"], child_bugs=[
                 WorkItemRef(id=100, title="Bug A"),
                 WorkItemRef(id=101, title="Bug B"),
             ]),
-            _make_deliverable(2, ["QA Active"], child_bugs=[
+            _make_deliverable(2, ["Under QA"], child_bugs=[
                 WorkItemRef(id=200, title="Bug C"),
             ]),
         ]
@@ -164,8 +164,8 @@ class TestComputeReworkRate:
 
     def test_items_not_in_qa_excluded_from_denominator(self):
         items = [
-            _make_deliverable(1, ["Development Active"]),
-            _make_deliverable(2, ["QA Active"], tags=["Code Defect"]),
+            _make_deliverable(1, ["Under Development"]),
+            _make_deliverable(2, ["Under QA"], tags=["Code Defect"]),
         ]
         result = compute_rework_rate(items, _DEFAULT_CONFIG)
         assert result.items_reached_qa == 1
@@ -177,9 +177,9 @@ class TestComputeReworkRate:
             enabled=True,
             rag=RAGThresholds(green_max=0.20, amber_max=0.30),
             rework_tags=["Code Defect"],
-            qa_canonical_status="QA Active",
+            qa_canonical_status="Under QA",
         )
-        qa_items = [_make_deliverable(i, ["QA Active"]) for i in range(10)]
+        qa_items = [_make_deliverable(i, ["Under QA"]) for i in range(10)]
         qa_items[0].tags = ["Code Defect"]
         qa_items[1].tags = ["Code Defect"]
         result = compute_rework_rate(qa_items, config)
@@ -188,9 +188,9 @@ class TestComputeReworkRate:
 
     def test_bounced_back_count(self):
         items = [
-            _make_deliverable(1, ["QA Active"], bounces=2),
-            _make_deliverable(2, ["QA Active"], bounces=0),
-            _make_deliverable(3, ["QA Active"], bounces=1),
+            _make_deliverable(1, ["Under QA"], bounces=2),
+            _make_deliverable(2, ["Under QA"], bounces=0),
+            _make_deliverable(3, ["Under QA"], bounces=1),
         ]
         result = compute_rework_rate(items, _DEFAULT_CONFIG)
         assert result.items_bounced_back == 2
@@ -225,7 +225,7 @@ class TestComputeDeliveryPredictability:
 
     def test_none_deployed(self):
         items = [
-            _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Under Development")
             for i in range(10)
         ]
         result = compute_delivery_predictability(
@@ -239,9 +239,9 @@ class TestComputeDeliveryPredictability:
     def test_mixed_started_and_spillover(self):
         items = [
             _make_deliverable(1, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Delivered"),
-            _make_deliverable(2, start_date=datetime(2025, 1, 12, tzinfo=timezone.utc), canonical_status="Development Active"),
+            _make_deliverable(2, start_date=datetime(2025, 1, 12, tzinfo=timezone.utc), canonical_status="Under Development"),
             _make_deliverable(3, is_spillover=True, canonical_status="Delivered"),
-            _make_deliverable(4, is_spillover=True, canonical_status="QA Active"),
+            _make_deliverable(4, is_spillover=True, canonical_status="Under QA"),
         ]
         result = compute_delivery_predictability(
             items, _DEFAULT_DP_CONFIG, self._period_start, self._period_end,
@@ -259,7 +259,7 @@ class TestComputeDeliveryPredictability:
             for i in range(85)
         ]
         not_deployed = [
-            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Under Development")
             for i in range(15)
         ]
         result = compute_delivery_predictability(
@@ -274,7 +274,7 @@ class TestComputeDeliveryPredictability:
             for i in range(75)
         ]
         remaining = [
-            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Under Development")
             for i in range(25)
         ]
         result = compute_delivery_predictability(
@@ -304,7 +304,7 @@ class TestComputeDeliveryPredictability:
             _make_deliverable(i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
             for i in range(85)
         ] + [
-            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Development Active")
+            _make_deliverable(100 + i, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Under Development")
             for i in range(15)
         ]
         result = compute_delivery_predictability(
@@ -367,9 +367,9 @@ class TestComputeKpiAverage:
 class TestFilterDeliverablesByMetric:
     def test_items_reached_qa(self):
         items = [
-            _make_deliverable(1, ["QA Active"]),
-            _make_deliverable(2, ["Development Active"]),
-            _make_deliverable(3, ["Development Active", "QA Active"]),
+            _make_deliverable(1, ["Under QA"]),
+            _make_deliverable(2, ["Under Development"]),
+            _make_deliverable(3, ["Under Development", "Under QA"]),
         ]
         result = filter_deliverables_by_metric(items, "items_reached_qa", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 2
@@ -377,9 +377,9 @@ class TestFilterDeliverablesByMetric:
 
     def test_items_with_rework(self):
         items = [
-            _make_deliverable(1, ["QA Active"], tags=["Code Defect"]),
-            _make_deliverable(2, ["QA Active"]),
-            _make_deliverable(3, ["QA Active"], tags=["Scope / Requirements"]),
+            _make_deliverable(1, ["Under QA"], tags=["Code Defect"]),
+            _make_deliverable(2, ["Under QA"]),
+            _make_deliverable(3, ["Under QA"], tags=["Scope / Requirements"]),
         ]
         result = filter_deliverables_by_metric(items, "items_with_rework", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 2
@@ -387,8 +387,8 @@ class TestFilterDeliverablesByMetric:
 
     def test_items_bounced_back(self):
         items = [
-            _make_deliverable(1, ["QA Active"], bounces=1),
-            _make_deliverable(2, ["QA Active"], bounces=0),
+            _make_deliverable(1, ["Under QA"], bounces=1),
+            _make_deliverable(2, ["Under QA"], bounces=0),
         ]
         result = filter_deliverables_by_metric(items, "items_bounced_back", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 1
@@ -396,8 +396,8 @@ class TestFilterDeliverablesByMetric:
 
     def test_items_with_bugs(self):
         items = [
-            _make_deliverable(1, ["QA Active"], child_bugs=[WorkItemRef(id=100)]),
-            _make_deliverable(2, ["QA Active"]),
+            _make_deliverable(1, ["Under QA"], child_bugs=[WorkItemRef(id=100)]),
+            _make_deliverable(2, ["Under QA"]),
         ]
         result = filter_deliverables_by_metric(items, "items_with_bugs", rework_config=_DEFAULT_CONFIG)
         assert len(result) == 1
@@ -423,7 +423,7 @@ class TestFilterDeliverablesByMetric:
     def test_dp_items_deployed(self):
         items = [
             _make_deliverable(1, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Delivered"),
-            _make_deliverable(2, is_spillover=True, canonical_status="Development Active"),
+            _make_deliverable(2, is_spillover=True, canonical_status="Under Development"),
             _make_deliverable(3, is_spillover=True, canonical_status="Delivered"),
         ]
         result = filter_deliverables_by_metric(
@@ -643,8 +643,8 @@ _DEFAULT_WD_CONFIG = WIPDisciplineConfig(
 _DEFAULT_TEAM_CONFIG = TeamConfig(
     project="test-project",
     states=[
-        StateMapping(canonical_status="Development Active", real_states=["Active", "Code Review", "Blocked"]),
-        StateMapping(canonical_status="QA Active", real_states=["Ready for QA", "In QA"]),
+        StateMapping(canonical_status="Under Development", real_states=["Active", "Code Review", "Blocked"]),
+        StateMapping(canonical_status="Under QA", real_states=["Ready for QA", "In QA"]),
         StateMapping(canonical_status="Delivered", real_states=["Closed"]),
         StateMapping(canonical_status="Backlog", real_states=["New"]),
     ],
@@ -698,9 +698,9 @@ class TestComputeWIPDiscipline:
     def test_all_devs_compliant(self):
         """2 devs each with <= 3 items for all 3 days -> 100% compliant."""
         items = [
-            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Alice")]),
-            _make_wd_deliverable(2, [("2024-12-30", "Active", "Development Active", "Alice")]),
-            _make_wd_deliverable(3, [("2024-12-30", "Active", "Development Active", "Bob")]),
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Under Development", "Alice")]),
+            _make_wd_deliverable(2, [("2024-12-30", "Active", "Under Development", "Alice")]),
+            _make_wd_deliverable(3, [("2024-12-30", "Active", "Under Development", "Bob")]),
         ]
         result = compute_wip_discipline(
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
@@ -715,10 +715,10 @@ class TestComputeWIPDiscipline:
         """Alice has 4 items (limit=3) for all 3 days -> not compliant.
         Bob has 1 -> compliant. Dev compliance = 50%."""
         items = [
-            _make_wd_deliverable(i, [("2024-12-30", "Active", "Development Active", "Alice")])
+            _make_wd_deliverable(i, [("2024-12-30", "Active", "Under Development", "Alice")])
             for i in range(1, 5)
         ] + [
-            _make_wd_deliverable(5, [("2024-12-30", "Active", "Development Active", "Bob")]),
+            _make_wd_deliverable(5, [("2024-12-30", "Active", "Under Development", "Bob")]),
         ]
         result = compute_wip_discipline(
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
@@ -735,10 +735,10 @@ class TestComputeWIPDiscipline:
         """Devs all compliant but QA over limit -> value = compliant_hours / total_hours.
         Dev1: 1 compliant day. QA1: 0 compliant days. Total = (1+0)/(1+1) = 0.5."""
         items = [
-            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Dev1")]),
-            _make_wd_deliverable(2, [("2024-12-30", "In QA", "QA Active", "QA1")]),
-            _make_wd_deliverable(3, [("2024-12-30", "In QA", "QA Active", "QA1")]),
-            _make_wd_deliverable(4, [("2024-12-30", "In QA", "QA Active", "QA1")]),
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Under Development", "Dev1")]),
+            _make_wd_deliverable(2, [("2024-12-30", "In QA", "Under QA", "QA1")]),
+            _make_wd_deliverable(3, [("2024-12-30", "In QA", "Under QA", "QA1")]),
+            _make_wd_deliverable(4, [("2024-12-30", "In QA", "Under QA", "QA1")]),
         ]
         result = compute_wip_discipline(
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
@@ -752,8 +752,8 @@ class TestComputeWIPDiscipline:
     def test_status_breakdown_by_real_state(self):
         """Alice has items in Active and Code Review -> breakdown shows both."""
         items = [
-            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Alice")]),
-            _make_wd_deliverable(2, [("2024-12-30", "Code Review", "Development Active", "Alice")]),
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Under Development", "Alice")]),
+            _make_wd_deliverable(2, [("2024-12-30", "Code Review", "Under Development", "Alice")]),
         ]
         result = compute_wip_discipline(
             items, _DEFAULT_WD_CONFIG, _DEFAULT_TEAM_CONFIG,
@@ -769,11 +769,11 @@ class TestComputeWIPDiscipline:
         assert alice.avg_wip == 2.0
 
     def test_mid_period_transition(self):
-        """Item moves from Dev Active to QA Active mid-period."""
+        """Item moves from Under Development to Under QA mid-period."""
         items = [
             _make_wd_deliverable(1, [
-                ("2025-01-01", "Active", "Development Active", "Alice"),
-                ("2025-01-02", "In QA", "QA Active", "Bob"),
+                ("2025-01-01", "Active", "Under Development", "Alice"),
+                ("2025-01-02", "In QA", "Under QA", "Bob"),
             ]),
         ]
         result = compute_wip_discipline(
@@ -790,11 +790,11 @@ class TestComputeWIPDiscipline:
     def test_compliance_threshold_boundary(self):
         """Dev over limit exactly 1 out of 5 days = 80% compliant -> passes."""
         items = [
-            _make_wd_deliverable(1, [("2024-12-30", "Active", "Development Active", "Alice")]),
-            _make_wd_deliverable(2, [("2024-12-30", "Active", "Development Active", "Alice")]),
-            _make_wd_deliverable(3, [("2024-12-30", "Active", "Development Active", "Alice")]),
+            _make_wd_deliverable(1, [("2024-12-30", "Active", "Under Development", "Alice")]),
+            _make_wd_deliverable(2, [("2024-12-30", "Active", "Under Development", "Alice")]),
+            _make_wd_deliverable(3, [("2024-12-30", "Active", "Under Development", "Alice")]),
             _make_wd_deliverable(4, [
-                ("2025-01-01", "Active", "Development Active", "Alice"),
+                ("2025-01-01", "Active", "Under Development", "Alice"),
                 ("2025-01-02", "Closed", "Delivered", "Alice"),
             ]),
         ]
@@ -852,15 +852,15 @@ class TestFilterWDMetrics:
         """Items assigned to compliant persons are returned."""
         items = [
             _make_wd_deliverable(
-                1, [("2024-12-30", "Active", "Development Active", "Alice")],
+                1, [("2024-12-30", "Active", "Under Development", "Alice")],
                 developer="Alice",
             ),
             _make_wd_deliverable(
-                2, [("2024-12-30", "Active", "Development Active", "Alice")],
+                2, [("2024-12-30", "Active", "Under Development", "Alice")],
                 developer="Alice",
             ),
             _make_wd_deliverable(
-                3, [("2024-12-30", "Active", "Development Active", "Bob")],
+                3, [("2024-12-30", "Active", "Under Development", "Bob")],
                 developer="Bob",
             ),
         ]
@@ -876,13 +876,13 @@ class TestFilterWDMetrics:
         """Alice has 4 items (limit=3) -> over limit -> items returned."""
         items = [
             _make_wd_deliverable(
-                i, [("2024-12-30", "Active", "Development Active", "Alice")],
+                i, [("2024-12-30", "Active", "Under Development", "Alice")],
                 developer="Alice",
             )
             for i in range(1, 5)
         ] + [
             _make_wd_deliverable(
-                5, [("2024-12-30", "Active", "Development Active", "Bob")],
+                5, [("2024-12-30", "Active", "Under Development", "Bob")],
                 developer="Bob",
             ),
         ]
@@ -1018,8 +1018,8 @@ class TestComputeTechDebtRatio:
         items = [
             _make_deliverable(1, canonical_status="Delivered", is_technical_debt=True),
             _make_deliverable(2, canonical_status="Delivered"),
-            _make_deliverable(3, canonical_status="Development Active", is_technical_debt=True),
-            _make_deliverable(4, canonical_status="QA Active"),
+            _make_deliverable(3, canonical_status="Under Development", is_technical_debt=True),
+            _make_deliverable(4, canonical_status="Under QA"),
         ]
         result = compute_tech_debt_ratio(items, _DEFAULT_TD_CONFIG)
         assert result.total_deployed == 2
@@ -1040,7 +1040,7 @@ class TestFilterTDMetrics:
         items = [
             _make_deliverable(1, canonical_status="Delivered", is_technical_debt=True),
             _make_deliverable(2, canonical_status="Delivered"),
-            _make_deliverable(3, canonical_status="Development Active", is_technical_debt=True),
+            _make_deliverable(3, canonical_status="Under Development", is_technical_debt=True),
         ]
         result = filter_deliverables_by_metric(
             items, "tech_debt_deployed", td_config=_DEFAULT_TD_CONFIG,
@@ -1198,7 +1198,7 @@ class TestComputeDeliverySnapshot:
     def test_all_metrics(self):
         items = [
             _make_deliverable(
-                1, timeline_canons=["QA Active"], tags=["Code Defect"],
+                1, timeline_canons=["Under QA"], tags=["Code Defect"],
                 start_date=datetime(2025, 1, 5, tzinfo=timezone.utc),
                 canonical_status="Delivered", is_technical_debt=True,
                 child_bugs=[WorkItemRef(id=100, title="Bug A")],
@@ -1208,12 +1208,12 @@ class TestComputeDeliverySnapshot:
                 canonical_status="Delivered",
             ),
             _make_deliverable(
-                3, is_spillover=True, canonical_status="Development Active",
+                3, is_spillover=True, canonical_status="Under Development",
                 is_technical_debt=True,
             ),
             _make_deliverable(
                 4, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc),
-                canonical_status="QA Active",
+                canonical_status="Under QA",
                 child_bugs=[WorkItemRef(id=200, title="Bug B")],
             ),
         ]
@@ -1246,7 +1246,7 @@ class TestFilterSnapshotMetric:
     def _items(self):
         return [
             _make_deliverable(
-                1, timeline_canons=["QA Active"], tags=["Code Defect"],
+                1, timeline_canons=["Under QA"], tags=["Code Defect"],
                 start_date=datetime(2025, 1, 5, tzinfo=timezone.utc),
                 canonical_status="Delivered", is_technical_debt=True,
                 child_bugs=[WorkItemRef(id=100, title="Bug A")],
@@ -1256,12 +1256,12 @@ class TestFilterSnapshotMetric:
                 canonical_status="Delivered",
             ),
             _make_deliverable(
-                3, is_spillover=True, canonical_status="Development Active",
+                3, is_spillover=True, canonical_status="Under Development",
                 is_technical_debt=True,
             ),
             _make_deliverable(
                 4, start_date=datetime(2025, 1, 15, tzinfo=timezone.utc),
-                canonical_status="QA Active",
+                canonical_status="Under QA",
                 child_bugs=[WorkItemRef(id=200, title="Bug B")],
             ),
         ]
@@ -1317,8 +1317,8 @@ _DEFAULT_TEAM_CONFIG = TeamConfig(
     bug_types=["Bug"],
     states=[
         StateMapping(canonical_status="Delivered", real_states=["Closed", "Resolved", "Release Candidate"]),
-        StateMapping(canonical_status="Development Active", real_states=["Active"]),
-        StateMapping(canonical_status="QA Active", real_states=["In QA"]),
+        StateMapping(canonical_status="Under Development", real_states=["Active"]),
+        StateMapping(canonical_status="Under QA", real_states=["In QA"]),
     ],
 )
 
@@ -1355,7 +1355,7 @@ class TestComputeInitiativeDelivery:
         """2 deliverables under initiatives committed, 1 delivered -> 50%."""
         d1 = _make_deliverable(1, start_date=datetime(2025, 1, 5, tzinfo=timezone.utc), canonical_status="Delivered")
         d1.parent_epic = WorkItemRef(id=100, title="Epic A", state="Closed")
-        d2 = _make_deliverable(2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Development Active")
+        d2 = _make_deliverable(2, start_date=datetime(2025, 1, 10, tzinfo=timezone.utc), canonical_status="Under Development")
         d2.parent_epic = WorkItemRef(id=101, title="Epic B", state="Active")
         items = [d1, d2]
         result = compute_initiative_delivery(
