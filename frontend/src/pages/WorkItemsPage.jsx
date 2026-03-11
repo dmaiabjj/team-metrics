@@ -12,10 +12,11 @@ import ErrorBox from '../components/shared/ErrorBox';
 const FLAG_TABS = [
   { key: '', label: 'All' },
   { key: 'delivered', label: 'Delivered' },
+  { key: 'committed', label: 'Committed' },
   { key: 'spillover', label: 'Spillover' },
+  { key: 'committed_in_period', label: 'Committed in Period' },
   { key: 'rework', label: 'Rework' },
   { key: 'techdebt', label: 'Tech Debt' },
-  { key: 'committed', label: 'Committed' },
   { key: 'bugs', label: '🐛 Bugs' },
 ];
 
@@ -43,6 +44,7 @@ export default function WorkItemsPage() {
     let list = data.items;
     if (flagFilter === 'delivered') list = list.filter((w) => w.is_delivered);
     if (flagFilter === 'spillover') list = list.filter((w) => w.is_spillover);
+    if (flagFilter === 'committed_in_period') list = list.filter((w) => w.is_committed && !w.is_spillover);
     if (flagFilter === 'rework') list = list.filter((w) => w.is_rework_item);
     if (flagFilter === 'techdebt') list = list.filter((w) => w.is_technical_debt);
     if (flagFilter === 'committed') list = list.filter((w) => w.is_committed);

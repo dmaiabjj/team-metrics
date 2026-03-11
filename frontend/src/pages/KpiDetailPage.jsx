@@ -12,8 +12,6 @@ import ReworkTable from '../components/tables/ReworkTable';
 import ReleaseHistory from '../components/shared/ReleaseHistory';
 import LeadTimeTable from '../components/tables/LeadTimeTable';
 import WipDevCard from '../components/wip/WipDevCard';
-import KpiDonutChart from '../components/charts/KpiDonutChart';
-
 export default function KpiDetailPage() {
   const { teamId, kpiName: kpiSlug } = useParams();
   const navigate = useNavigate();
@@ -71,40 +69,68 @@ export default function KpiDetailPage() {
             </div>
           </div>
 
-          {/* ── WIP DISCIPLINE: developer breakdown ─────────────────── */}
+          {/* ── WIP DISCIPLINE: developers and QAs separated ─────────── */}
           {kpiKey === 'wip_discipline' && kpi.persons && (
             <>
-              <div className="stat-row" style={{ marginBottom: 20 }}>
-                <StatBox value={kpi.total_developers ?? 0} label="Developers" />
-                <StatBox value={kpi.developers_compliant ?? 0} label="Compliant ≥80%" color="#10b981" />
-                <StatBox
-                  value={(kpi.total_developers ?? 0) - (kpi.developers_compliant ?? 0)}
-                  label="Over WIP Limit" color="#ef4444"
-                />
-                <StatBox value={kpi.dev_wip_limit ?? 0} label="WIP Limit / Dev" color={color} />
-                {kpi.total_qas > 0 && (
-                  <>
-                    <StatBox value={kpi.total_qas ?? 0} label="QAs" />
-                    <StatBox value={kpi.qas_compliant ?? 0} label="QAs Compliant" color="#10b981" />
-                    <StatBox value={kpi.qa_wip_limit ?? 0} label="QA WIP Limit" color={color} />
-                  </>
-                )}
-              </div>
-              <div className="section-head">
-                <div>
-                  <div className="section-title">Developer WIP Breakdown</div>
-                  <div className="section-sub">{kpi.persons.length} persons · click to expand work items</div>
+              {/* Developers section */}
+              <div style={{ marginBottom: 28 }}>
+                <div className="section-head" style={{ marginBottom: 12 }}>
+                  <div>
+                    <div className="section-title">Developers</div>
+                    <div className="section-sub">WIP during Under Development · Per status: avg items/day / limit</div>
+                  </div>
+                </div>
+                <div className="stat-row" style={{ marginBottom: 16 }}>
+                  <StatBox value={kpi.total_developers ?? 0} label="Developers" />
+                  <StatBox value={kpi.developers_compliant ?? 0} label="Compliant ≥80%" color="#10b981" />
+                  <StatBox
+                    value={(kpi.total_developers ?? 0) - (kpi.developers_compliant ?? 0)}
+                    label="Over WIP Limit" color="#ef4444"
+                  />
+                  <StatBox value={kpi.dev_wip_limit ?? 0} label="WIP Limit / Dev" color={color} />
+                </div>
+                <div className="wip-dev-grid">
+                  {kpi.persons.filter((p) => p.role === 'developer').map((person) => (
+                    <WipDevCard
+                      key={`dev-${person.person}`}
+                      person={person}
+                      wipLimit={kpi.dev_wip_limit ?? 0}
+                      onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)}
+                    />
+                  ))}
                 </div>
               </div>
-              <div className="wip-dev-grid">
-                {kpi.persons.map((person) => (
-                  <WipDevCard
-                    key={person.person}
-                    person={person}
-                    onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)}
-                  />
-                ))}
-              </div>
+
+              {/* QAs section */}
+              {(kpi.total_qas ?? 0) > 0 && (
+                <div>
+                  <div className="section-head" style={{ marginBottom: 12 }}>
+                    <div>
+                      <div className="section-title">QAs</div>
+                      <div className="section-sub">WIP during Under QA · Per status: avg items/day / limit</div>
+                    </div>
+                  </div>
+                  <div className="stat-row" style={{ marginBottom: 16 }}>
+                    <StatBox value={kpi.total_qas ?? 0} label="QAs" />
+                    <StatBox value={kpi.qas_compliant ?? 0} label="Compliant ≥80%" color="#10b981" />
+                    <StatBox
+                      value={(kpi.total_qas ?? 0) - (kpi.qas_compliant ?? 0)}
+                      label="Over WIP Limit" color="#ef4444"
+                    />
+                    <StatBox value={kpi.qa_wip_limit ?? 0} label="QA WIP Limit" color={color} />
+                  </div>
+                  <div className="wip-dev-grid">
+                    {kpi.persons.filter((p) => p.role === 'qa').map((person) => (
+                      <WipDevCard
+                        key={`qa-${person.person}`}
+                        person={person}
+                        wipLimit={kpi.qa_wip_limit ?? 0}
+                        onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -137,10 +163,10 @@ export default function KpiDetailPage() {
                   )}
                   {kpiKey === 'delivery_predictability' && (
                     <>
-                      <StatBox value={kpi.items_deployed ?? 0} label="Delivered" />
                       <StatBox value={kpi.items_committed ?? 0} label="Committed" />
                       <StatBox value={kpi.items_started_in_period ?? 0} label="Started in Period" />
                       <StatBox value={kpi.items_spillover ?? 0} label="Spillovers" color="#f59e0b" />
+                      <StatBox value={kpi.items_deployed ?? 0} label="Delivered" />
                     </>
                   )}
                   {kpiKey === 'tech_debt_ratio' && (
@@ -176,26 +202,6 @@ export default function KpiDetailPage() {
                     </>
                   )}
                 </div>
-                {/* Donut chart for ratio-based KPIs */}
-                {['rework_rate', 'delivery_predictability', 'tech_debt_ratio', 'initiative_delivery', 'reliability_action_delivery'].includes(kpiKey) && (
-                  <KpiDonutChart
-                    value={
-                      kpiKey === 'rework_rate' ? (kpi.items_with_rework ?? 0) :
-                      kpiKey === 'delivery_predictability' ? (kpi.items_deployed ?? 0) :
-                      kpiKey === 'tech_debt_ratio' ? (kpi.tech_debt_count ?? 0) :
-                      kpiKey === 'initiative_delivery' ? (kpi.initiatives_delivered ?? 0) :
-                      (kpi.reliability_actions_sla_met ?? 0)
-                    }
-                    total={
-                      kpiKey === 'rework_rate' ? (kpi.items_reached_qa ?? 1) :
-                      kpiKey === 'delivery_predictability' ? (kpi.items_committed ?? 1) :
-                      kpiKey === 'tech_debt_ratio' ? (kpi.total_deployed ?? 1) :
-                      kpiKey === 'initiative_delivery' ? (kpi.initiatives_committed ?? 1) :
-                      (kpi.reliability_actions_delivered ?? 1)
-                    }
-                    color={color}
-                  />
-                )}
               </div>
 
               {kpiKey === 'deploy_frequency' && (data?.deployments?.length ?? 0) > 0 && (

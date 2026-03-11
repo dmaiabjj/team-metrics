@@ -1,4 +1,5 @@
 import { useParams, useNavigate, Link } from 'react-router';
+import { Activity } from 'lucide-react';
 import { useDoraDetail } from '../api/hooks/useDoraMetrics';
 import { useDashboard } from '../api/hooks/useDashboard';
 import { usePeriod } from '../context/PeriodContext';
@@ -52,6 +53,17 @@ function levelCardStyle(color) {
   };
 }
 
+function metricCardOuterStyle() {
+  return {
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 18,
+    overflow: 'hidden',
+    cursor: 'pointer',
+    transition: 'box-shadow 0.15s',
+  };
+}
+
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export default function DoraHealthPage() {
   const { teamId } = useParams();
@@ -82,11 +94,12 @@ export default function DoraHealthPage() {
     <div className="page dora-page animate-fade-in" style={{ padding: 32, background: '#f8f9fb' }}>
 
       {/* Breadcrumb */}
-      <div className="breadcrumb" style={{ marginBottom: 24 }}>
+      <div className="breadcrumb" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 6 }}>
         <Link to="/">Overview</Link>
         <span>/</span>
         <Link to={`/teams/${teamId}`}>{TEAM_LABELS[teamId] || teamId}</Link>
         <span>/</span>
+        <Activity size={16} strokeWidth={2} style={{ flexShrink: 0 }} />
         <span style={{ color: 'var(--text)', fontWeight: 600 }}>DORA Health</span>
       </div>
 
@@ -153,7 +166,7 @@ export default function DoraHealthPage() {
         )}
 
         {/* ── TWO METRIC CARDS ────────────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24, marginBottom: 32 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 32 }}>
           {DORA_KEYS.map(k => {
             const value = k === 'deploy_frequency' ? dfValue : ltValue;
             const kpi = k === 'deploy_frequency' ? dfKpi : ltKpi;
@@ -175,84 +188,129 @@ export default function DoraHealthPage() {
               <div
                 key={k}
                 onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[k]}`)}
-                style={{ ...DORA_CARD, cursor: 'pointer', transition: 'box-shadow 0.15s' }}
+                style={metricCardOuterStyle()}
                 onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--shadow-md)'; }}
                 onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
               >
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                      {m?.label}
+                <div style={{
+                  height: 4,
+                  background: `linear-gradient(90deg, ${color}, ${hexToRgba(color, 0.376)})`,
+                }} />
+                <div style={{ padding: '22px 24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                        {m?.icon} {m?.label}
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 500 }}>{m?.desc}</div>
                     </div>
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{m?.desc}</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 20, fontFamily: 'var(--font-mono)' }}>
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <svg width={160} height={116} style={{ overflow: 'visible', fontFamily: 'inherit' }}>
-                      <circle cx={gaugeCX} cy={gaugeCX} r={gaugeR} fill="none" stroke={DORA_BORDER} strokeWidth={12}
-                        strokeDasharray={`${gaugeTotalArc} ${gaugeCirc}`} strokeLinecap="round"
-                        transform={`rotate(135 ${gaugeCX} ${gaugeCX})`} />
-                      <circle cx={gaugeCX} cy={gaugeCX} r={gaugeR} fill="none" stroke={color} strokeWidth={12}
-                        strokeDasharray={`${gaugeDash} ${gaugeCirc}`} strokeLinecap="round"
-                        transform={`rotate(135 ${gaugeCX} ${gaugeCX})`}
-                        style={{ transition: 'stroke-dasharray 0.9s ease' }} />
-                      <text x={gaugeCX} y={gaugeCX + 2} textAnchor="middle" fill={color}
-                        fontSize={22} fontWeight={800} style={{ fontFamily: 'inherit' }}>{fmtDora(k, value)}</text>
-                      <text x={gaugeCX} y={gaugeCX + 18} textAnchor="middle" fill="var(--muted)"
-                        fontSize={10} style={{ fontFamily: 'inherit' }}>{k === 'deploy_frequency' ? '/day' : 'h'}</text>
-                    </svg>
-                  </div>
-                  <div style={{ flex: 1 }}>
                     {level && (
-                      <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', marginBottom: 12, lineHeight: 1.5, fontFamily: 'var(--font-mono)' }}>
-                        "{level.desc}"
+                      <div style={{
+                        background: hexToRgba(color, 0.094),
+                        border: `1px solid ${hexToRgba(color, 0.25)}`,
+                        borderRadius: 20,
+                        padding: '5px 14px',
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color,
+                        fontFamily: 'var(--font-mono)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        flexShrink: 0,
+                      }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
+                        {level.label}
                       </div>
                     )}
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-                      formula: {m?.formula}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 20 }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <svg width={160} height={116} style={{ overflow: 'visible', fontFamily: 'inherit' }}>
+                        <circle cx={gaugeCX} cy={gaugeCX} r={gaugeR} fill="none" stroke="var(--border)" strokeWidth={12}
+                          strokeDasharray={`${gaugeTotalArc} ${gaugeCirc}`} strokeLinecap="round"
+                          transform={`rotate(135 ${gaugeCX} ${gaugeCX})`} />
+                        <circle cx={gaugeCX} cy={gaugeCX} r={gaugeR} fill="none" stroke={color} strokeWidth={12}
+                          strokeDasharray={`${gaugeDash} ${gaugeCirc}`} strokeLinecap="round"
+                          transform={`rotate(135 ${gaugeCX} ${gaugeCX})`}
+                          style={{ transition: 'stroke-dasharray 0.9s ease' }} />
+                        <text x={gaugeCX} y={gaugeCX + 2} textAnchor="middle" fill={color}
+                          fontSize={22} fontWeight={800} style={{ fontFamily: 'var(--font-head)' }}>{fmtDora(k, value)}</text>
+                        <text x={gaugeCX} y={gaugeCX + 18} textAnchor="middle" fill="var(--muted)"
+                          fontSize={10} style={{ fontFamily: 'var(--font-head)' }}>{k === 'deploy_frequency' ? '/day' : 'h'}</text>
+                      </svg>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      {level && (
+                        <div style={{ fontSize: 13, color: 'var(--text2)', fontStyle: 'italic', marginBottom: 12, lineHeight: 1.5 }}>
+                          "{level.desc}"
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
+                        formula: {m?.formula}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {allLevels.map((l, i) => {
-                    const isThis = level?.label === l.label;
-                    return (
-                      <div key={i} style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '8px 12px', borderRadius: 8,
-                        background: isThis ? l.color + '12' : 'transparent',
-                        border: `1px solid ${isThis ? l.color + '40' : 'transparent'}`,
-                        transition: 'all 0.2s',
-                      }}>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: l.color, flexShrink: 0 }} />
-                        <div style={{ flex: 1, fontSize: 12, color: 'var(--text)', fontWeight: isThis ? 600 : 400 }}>
-                          {l.desc}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {allLevels.map((l, i) => {
+                      const isThis = level?.label === l.label;
+                      return (
+                        <div key={i} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '8px 12px',
+                          borderRadius: 9,
+                          background: isThis ? hexToRgba(l.color, 0.07) : '#f7f6fb',
+                          border: `1px solid ${isThis ? hexToRgba(l.color, 0.25) : 'var(--border)'}`,
+                          transition: '0.2s',
+                        }}>
+                          <div style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            background: l.color,
+                            flexShrink: 0,
+                            boxShadow: isThis ? `${l.color} 0 0 8px` : 'none',
+                          }} />
+                          <div style={{ flex: '1 1 0%', fontSize: 11, fontWeight: isThis ? 800 : 500, color: isThis ? l.color : 'var(--text2)' }}>
+                            {l.label}
+                          </div>
+                          <div style={{ fontSize: 11, color: isThis ? 'var(--text2)' : 'var(--muted)' }}>
+                            {l.desc}
+                          </div>
+                          {isThis && (
+                            <div style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: l.color,
+                              fontFamily: 'var(--font-mono)',
+                              background: hexToRgba(l.color, 0.094),
+                              padding: '1px 7px',
+                              borderRadius: 20,
+                            }}>
+                              you
+                            </div>
+                          )}
                         </div>
-                        {isThis && (
-                          <span style={{ fontSize: 9, fontWeight: 700, color: l.color, background: l.color + '22', padding: '2px 8px', borderRadius: 999, fontFamily: 'var(--font-mono)', textTransform: 'lowercase' }}>
-                            you
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                  {k === 'deploy_frequency' && kpi.deployment_count != null && (
+                    <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', gap: 12 }}>
+                      <MiniStat value={kpi.deployment_count ?? 0} label="Total Deploys" />
+                      <MiniStat value={kpi.period_days ?? 0} label="Period Days" />
+                    </div>
+                  )}
+                  {k === 'lead_time' && kpi.lead_time_days != null && (
+                    <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', gap: 12 }}>
+                      <MiniStat value={fmtDora('lead_time', kpi.lead_time_days)} label="Average" />
+                      <MiniStat value={kpi.median_lead_time_days != null ? fmtDora('lead_time', kpi.median_lead_time_days) : '—'} label="Median" />
+                      <MiniStat value={kpi.p90_lead_time_days != null ? fmtDora('lead_time', kpi.p90_lead_time_days) : '—'} label="P90" />
+                      <MiniStat value={kpi.sample_size ?? 0} label="Sample" />
+                    </div>
+                  )}
                 </div>
-                {k === 'deploy_frequency' && kpi.deployment_count != null && (
-                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${DORA_BORDER}`, display: 'flex', gap: 12 }}>
-                    <MiniStat value={kpi.deployment_count ?? 0} label="Total Deploys" />
-                    <MiniStat value={kpi.period_days ?? 0} label="Period Days" />
-                  </div>
-                )}
-                {k === 'lead_time' && kpi.lead_time_days != null && (
-                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${DORA_BORDER}`, display: 'flex', gap: 12 }}>
-                    <MiniStat value={fmtDora('lead_time', kpi.lead_time_days)} label="Average" />
-                    <MiniStat value={kpi.median_lead_time_days != null ? fmtDora('lead_time', kpi.median_lead_time_days) : '—'} label="Median" />
-                    <MiniStat value={kpi.p90_lead_time_days != null ? fmtDora('lead_time', kpi.p90_lead_time_days) : '—'} label="P90" />
-                    <MiniStat value={kpi.sample_size ?? 0} label="Sample" />
-                  </div>
-                )}
               </div>
             );
           })}
@@ -296,7 +354,7 @@ export default function DoraHealthPage() {
 /* ── MiniStat (kpi_report style) ─────────────────────────────────────────── */
 function MiniStat({ value, label }) {
   return (
-    <div style={{ flex: 1, textAlign: 'center', background: 'var(--surface2)', borderRadius: 8, padding: '6px 8px' }}>
+    <div style={{ flex: 1, textAlign: 'center', background: '#f7f6fb', borderRadius: 8, padding: '6px 8px' }}>
       <div style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{value}</div>
       <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>{label}</div>
     </div>

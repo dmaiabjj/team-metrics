@@ -1,9 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router';
+import { PanelLeftClose, PanelLeftOpen, LayoutDashboard, Activity } from 'lucide-react';
 import { TEAMS, TEAM_LABELS, TEAM_COLORS, TEAM_ICONS } from '../../lib/constants';
 
+const SIDEBAR_STORAGE_KEY = 'sidebar-expanded';
+
 export default function Sidebar() {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(expanded));
+    } catch {}
+  }, [expanded]);
   const navigate = useNavigate();
   const location = useLocation();
   const { teamId } = useParams();
@@ -16,10 +31,10 @@ export default function Sidebar() {
   })();
 
   const NAV = [
-    { id: 'overview', icon: '⊞', label: 'Overview', section: 'General' },
+    { id: 'overview', icon: 'overview', label: 'Overview', section: 'General' },
     ...TEAMS.map(t => ({ id: 'team-' + t, team: t, icon: TEAM_ICONS[t], label: TEAM_LABELS[t], type: 'team', section: 'Teams' })),
     { id: 'sep' },
-    ...TEAMS.map(t => ({ id: 'dora-' + t, team: t, icon: '⬡', label: TEAM_LABELS[t], type: 'dora', section: 'DORA' })),
+    ...TEAMS.map(t => ({ id: 'dora-' + t, team: t, icon: 'dora', label: TEAM_LABELS[t], type: 'dora', section: 'DORA' })),
   ];
 
   const isActive = (item) => {
@@ -45,7 +60,8 @@ export default function Sidebar() {
         <span className="sidebar-brand">Team Metrics</span>
       </div>
 
-      {/* Nav items */}
+      {/* Nav items (scrollable when collapsed) */}
+      <div className="sidebar-nav-wrap">
       {NAV.map((item, i) => {
         if (item.id === 'sep') return <div key={i} className="sidebar-sep" />;
 
@@ -61,10 +77,15 @@ export default function Sidebar() {
         const navEl = (
           <div
             key={item.id}
+            role="button"
+            tabIndex={0}
             className={`nav-icon${active ? ' active' : ''}`}
             onClick={() => handleNav(item)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNav(item); } }}
           >
-            <span className="nav-icon-symbol" style={{ fontSize: item.type === 'dora' ? 13 : 16 }}>{item.icon}</span>
+            {item.icon === 'overview' ? <LayoutDashboard className="nav-icon-symbol" size={18} strokeWidth={2} /> :
+              item.icon === 'dora' ? <Activity className="nav-icon-symbol" size={18} strokeWidth={2} /> :
+              <span className="nav-icon-symbol">{item.icon}</span>}
             <span className="nav-icon-label">{item.label}</span>
             {dot && !active && <div className="nav-dot-sm" style={{ background: dot }} />}
             {!expanded && <span className="tooltip">{item.section ? `${item.section} · ` : ''}{item.label}</span>}
@@ -73,11 +94,12 @@ export default function Sidebar() {
 
         return sectionEl ? [sectionEl, navEl] : navEl;
       })}
+      </div>
 
       {/* Collapse toggle */}
       <div className="sidebar-toggle">
-        <button className="sidebar-toggle-btn" onClick={() => setExpanded(e => !e)} title={expanded ? 'Collapse' : 'Expand'}>
-          {expanded ? '◀' : '▶'}
+        <button className="sidebar-toggle-btn" onClick={() => setExpanded(e => !e)} title={expanded ? 'Collapse sidebar' : 'Expand sidebar'}>
+          {expanded ? <PanelLeftClose size={18} strokeWidth={2} /> : <PanelLeftOpen size={18} strokeWidth={2} />}
         </button>
       </div>
     </nav>

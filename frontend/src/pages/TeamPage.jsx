@@ -3,6 +3,7 @@ import { useTeamKpis } from '../api/hooks/useTeamKpis';
 import { useWorkItems } from '../api/hooks/useWorkItems';
 import { usePeriod } from '../context/PeriodContext';
 import { TEAM_LABELS, TEAM_ICONS, TEAM_COLORS, KPI_KEYS, DORA_KEYS, KPI_META, KPI_SLUG, DORA_LEVELS } from '../lib/constants';
+import { Activity } from 'lucide-react';
 import { fmt, fmtDate, kpiColor, kpiStatus, valFromKpis, doraLevel } from '../lib/formatters';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
@@ -75,19 +76,6 @@ function KpiHeroCard({ kpiKey, value, onClick }) {
     </div>
   );
 }
-
-/* ── DORA hexagon icon ─────────────────────────────────────────────────── */
-const DoraHexIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" style={{ flexShrink: 0 }} aria-hidden>
-    <defs>
-      <linearGradient id="dora-hex-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="var(--accent)" />
-        <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.6" />
-      </linearGradient>
-    </defs>
-    <polygon points="12,2 22,7 22,17 12,22 2,17 2,7" fill="url(#dora-hex-grad)" stroke="var(--accent)" strokeWidth="1.5" strokeLinejoin="round" fillOpacity="0.2" />
-  </svg>
-);
 
 /* ── Section Header ───────────────────────────────────────────────────── */
 function SecHeader({ icon, title, sub, action }) {
@@ -261,7 +249,7 @@ export default function TeamPage() {
           {/* ── DORA Section ─────────────────────────────────────────── */}
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: '20px 22px', boxShadow: 'var(--shadow-sm)', marginBottom: 28 }}>
             <SecHeader
-              icon={<DoraHexIcon />}
+              icon={<Activity size={18} strokeWidth={2} />}
               title="DORA Metrics"
               sub="DevOps Research & Assessment benchmarks"
               action={
@@ -352,9 +340,10 @@ export default function TeamPage() {
               <SecHeader icon="📦" title="Delivery Snapshot" sub="click a stat to filter work items" />
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 {[
-                  { label: 'Delivered',    val: snap.delivered,     filter: 'delivered',  color: '#10b981', bg: '#d1fae5', icon: '✓' },
-                  { label: 'Committed',    val: snap.committed,     filter: 'committed',  color: '#6366f1', bg: '#e0e7ff', icon: '🎯' },
-                  { label: 'Spillovers',   val: snap.spillovers,    filter: 'spillover',  color: '#f59e0b', bg: '#fef3c7', icon: '📤' },
+                  { label: 'Delivered',           val: snap.delivered,          filter: 'delivered',           color: '#10b981', bg: '#d1fae5', icon: '✓' },
+                  { label: 'Committed',           val: snap.committed,          filter: 'committed',          color: '#6366f1', bg: '#e0e7ff', icon: '🎯' },
+                  { label: 'Spillovers',          val: snap.spillovers,         filter: 'spillover',          color: '#f59e0b', bg: '#fef3c7', icon: '📤' },
+                  { label: 'Committed in Period', val: snap.committed_in_period, filter: 'committed_in_period', color: '#06b6d4', bg: '#cffafe', icon: '📅' },
                   { label: 'Rework Items', val: snap.rework_items,  filter: 'rework',     color: '#ef4444', bg: '#fee2e2', icon: '↩' },
                   { label: 'Tech Debt',    val: snap.tech_debts,    filter: 'techdebt',   color: '#8b5cf6', bg: '#ede9fe', icon: '🏚' },
                   { label: 'Bugs',         val: snap.bugs,          filter: 'bugs',       color: '#ef4444', bg: '#fee2e2', icon: '🐛' },

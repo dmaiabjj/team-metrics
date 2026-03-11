@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { Activity } from 'lucide-react';
 import { useDashboard } from '../api/hooks/useDashboard';
 import { usePeriod } from '../context/PeriodContext';
 import { TEAMS, TEAM_LABELS, TEAM_COLORS, TEAM_ICONS, KPI_KEYS, DORA_KEYS, KPI_META, DORA_LEVELS, ALL_KPI_KEYS } from '../lib/constants';
@@ -28,9 +29,10 @@ export default function OverviewPage() {
   const fleetScore = totalKPIs > 0 ? Math.round((fleetGood / totalKPIs) * 100) : null;
   const fleetColor = fleetScore == null ? '#94a3b8' : fleetScore >= 70 ? '#10b981' : fleetScore >= 45 ? '#f59e0b' : '#ef4444';
 
-  const Divider = ({ label }) => (
+  const Divider = ({ label, icon }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '28px 0 16px' }}>
       <div style={{ width: 3, height: 18, background: 'var(--accent)', borderRadius: 2, flexShrink: 0 }} />
+      {icon && <span style={{ display: 'flex', alignItems: 'center' }}>{icon}</span>}
       <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{label}</span>
       <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
     </div>
@@ -105,7 +107,7 @@ export default function OverviewPage() {
         </div>
 
         {/* ── DORA FLEET OVERVIEW ── */}
-        <Divider label="⬡ DORA Fleet Overview" />
+        <Divider label="DORA Fleet Overview" icon={<Activity size={16} strokeWidth={2} />} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 4 }}>
           {DORA_KEYS.map(k => {
             const avgVal = avgKpis[k];
@@ -215,7 +217,10 @@ export default function OverviewPage() {
                     const lv = doraLevel(k, v);
                     return (
                       <div key={k} style={{ flex: 1, background: 'var(--accent-soft)', border: '1px solid #c4b8fd', borderRadius: 9, padding: '6px 10px' }}>
-                        <div style={{ fontSize: 9, color: 'var(--accent)', fontWeight: 700, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>⬡ {KPI_META[k].label}</div>
+                        <div style={{ fontSize: 9, color: 'var(--accent)', fontWeight: 700, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Activity size={10} strokeWidth={2} />
+                          {KPI_META[k].label}
+                        </div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                           <span style={{ fontSize: 15, fontWeight: 900, color: lv?.color ?? 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{fmt(k, v)}</span>
                           {lv && <span style={{ fontSize: 9, fontWeight: 700, color: lv.color }}>{lv.label}</span>}

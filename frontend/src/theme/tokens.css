@@ -129,6 +129,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-head);min-hei
   white-space:nowrap;opacity:0;transition:opacity 0.15s;pointer-events:none;
 }
 .sidebar.expanded .sidebar-brand{opacity:1;}
+.sidebar:not(.expanded) .sidebar-brand{width:0;min-width:0;overflow:hidden;}
+.sidebar-nav-wrap{
+  flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;gap:4px;
+  align-items:stretch;
+}
+.sidebar:not(.expanded) .sidebar-nav-wrap{align-items:center;}
+.sidebar-nav-wrap::-webkit-scrollbar{width:4px;}
+.sidebar-nav-wrap::-webkit-scrollbar-track{background:transparent;}
+.sidebar-nav-wrap::-webkit-scrollbar-thumb{background:#ffffff18;border-radius:4px;}
+.sidebar-nav-wrap::-webkit-scrollbar-thumb:hover{background:#ffffff28;}
 .sidebar-sep{
   height:1px;background:#ffffff12;margin:6px 0;flex-shrink:0;
   transition:all 0.25s;
@@ -156,8 +167,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-head);min-hei
   width:auto;height:auto;
 }
 .nav-icon:hover{background:#ffffff12;color:#fff;}
+.nav-icon:focus-visible{outline:2px solid rgba(255,255,255,0.5);outline-offset:2px;}
 .nav-icon.active{background:var(--accent);color:#fff;box-shadow:0 4px 12px rgba(124,106,247,0.4);}
-.nav-icon-symbol{font-size:16px;line-height:1;flex-shrink:0;}
+.sidebar.expanded .nav-icon.active{border-left:3px solid rgba(255,255,255,0.8);padding-left:11px;}
+.nav-icon-symbol{font-size:16px;line-height:1;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.nav-icon-symbol svg{flex-shrink:0;}
 .nav-icon-label{
   font-size:12px;font-weight:600;opacity:0;
   transition:opacity 0.1s;pointer-events:none;flex:1;min-width:0;
@@ -165,13 +179,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-head);min-hei
 }
 .sidebar.expanded .nav-icon-label{opacity:1;}
 .nav-icon .tooltip{
-  position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);
+  position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);
   background:var(--sidebar);color:#fff;font-size:11px;font-weight:600;
-  padding:4px 10px;border-radius:6px;white-space:nowrap;pointer-events:none;
-  opacity:0;transition:opacity 0.15s;z-index:100;font-family:var(--font-head);
-  border:1px solid #ffffff18;
+  padding:6px 10px;border-radius:8px;white-space:nowrap;pointer-events:none;
+  opacity:0;transition:opacity 0.2s;z-index:100;font-family:var(--font-head);
+  border:1px solid #ffffff18;box-shadow:0 4px 12px rgba(0,0,0,0.2);
 }
 .sidebar:not(.expanded) .nav-icon:hover .tooltip{opacity:1;}
+.nav-icon .tooltip::after{
+  content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  border:5px solid transparent;border-top-color:var(--sidebar);
+}
 .nav-dot-sm{width:6px;height:6px;border-radius:50%;position:absolute;top:8px;right:8px;flex-shrink:0;}
 .sidebar.expanded .nav-dot-sm{position:static;margin-left:auto;}
 .sidebar-toggle{
@@ -187,6 +205,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-head);min-hei
   cursor:pointer;font-size:14px;transition:all 0.15s;flex-shrink:0;
 }
 .sidebar-toggle-btn:hover{background:#ffffff20;color:#fff;}
+.sidebar-toggle-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 
 /* ── MAIN ── */
 .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
@@ -494,8 +513,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-head);min-hei
 .wip-bar-bg{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
 .wip-bar-fill{height:100%;border-radius:3px;transition:width 0.4s ease;}
 .wip-count-badge{font-size:10px;font-family:var(--font-mono);font-weight:700;width:52px;text-align:right;flex-shrink:0;}
-.wip-compliance-bar{height:4px;border-radius:2px;margin-top:12px;background:var(--border);overflow:hidden;}
-.wip-compliance-fill{height:100%;border-radius:2px;transition:width 0.4s ease;}
+.wip-compliance-bar{height:6px;border-radius:3px;margin-top:12px;background:var(--border);overflow:hidden;display:flex;}
+.wip-compliance-fill{height:100%;min-height:6px;border-radius:3px;transition:width 0.4s ease;flex-shrink:0;}
 .wip-summary-row{display:flex;gap:12px;margin-bottom:20px;}
 
 /* ── BUGS ── */
