@@ -453,8 +453,8 @@ def compute_tech_debt_ratio(
     deliverables: list[DeliverableRow],
     config: TechDebtRatioConfig,
 ) -> TechDebtRatioKPI:
-    delivered_canonical = config.delivered_canonical_status
-    deployed = [d for d in deliverables if d.canonical_status == delivered_canonical]
+    """Tech debt ratio over committed+delivered items only (matches work items page)."""
+    deployed = [d for d in deliverables if d.is_delivered]
     tech_debt = [d for d in deployed if d.is_technical_debt]
 
     total = len(deployed)
@@ -764,8 +764,7 @@ def filter_deliverables_by_metric(
     if metric in TD_METRICS:
         if td_config is None:
             raise ValueError("td_config required for tech debt ratio metrics")
-        delivered_canonical = td_config.delivered_canonical_status
-        deployed = [d for d in deliverables if d.canonical_status == delivered_canonical]
+        deployed = [d for d in deliverables if d.is_delivered]
         if metric == "tech_debt_deployed":
             return [d for d in deployed if d.is_technical_debt]
         if metric == "non_tech_debt_deployed":

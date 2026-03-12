@@ -15,6 +15,7 @@ from app.api.helpers import (
     get_wi_cache,
     resolve_wip_limits,
     validate_date_range,
+    validate_team_id,
 )
 from app.auth import require_api_key
 from app.config.dora_loader import get_deploy_frequency_config, load_dora_config
@@ -240,9 +241,8 @@ async def get_work_items_search(
 ) -> WorkItemsResponse:
     """Search work items by ID or title. Fallback when not in period cache."""
     validate_date_range(start_date, end_date)
+    validate_team_id(team_id)
     teams = load_teams_config()
-    if team_id not in teams:
-        raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
     client = get_azure_client(request)
     wi_cache = get_wi_cache(request)
     items = await search_work_items(
@@ -276,9 +276,8 @@ async def get_work_item(
 ) -> DeliverableRow:
     """Fetch a single work item by ID (period-independent). For detail page and search fallback."""
     validate_date_range(start_date, end_date)
+    validate_team_id(team_id)
     teams = load_teams_config()
-    if team_id not in teams:
-        raise HTTPException(status_code=404, detail=f"Unknown team_id: {team_id}")
     client = get_azure_client(request)
     wi_cache = get_wi_cache(request)
     item = await fetch_single_work_item(

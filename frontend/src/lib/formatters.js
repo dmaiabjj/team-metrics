@@ -112,3 +112,17 @@ export function valFromKpis(kpis, kpiKey) {
   const entry = kpis.find((k) => k.name === kpiKey);
   return entry?.value ?? null;
 }
+
+// ─── EXTRACT RAG STATUS FROM team_metrics API responses ─────────────────
+export function ragFromKpis(kpis, kpiKey) {
+  if (!kpis) return null;
+  const entry = kpis.find((k) => k.name === kpiKey);
+  return entry?.rag ?? null;
+}
+
+// ─── RAG → COLOR (uses backend-computed RAG directly) ───────────────────
+const RAG_COLORS = { green: '#10b981', amber: '#f59e0b', red: '#ef4444' };
+
+export function ragColor(rag) {
+  return RAG_COLORS[rag] ?? '#64748b';
+}

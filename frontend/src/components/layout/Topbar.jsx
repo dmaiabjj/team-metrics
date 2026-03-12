@@ -22,6 +22,7 @@ export default function Topbar() {
   // Derive page title from URL
   const pageTitle = (() => {
     if (location.pathname === '/') return 'Overview';
+    if (location.pathname === '/performance') return 'Performance Analysis';
     if (itemId) return `#${itemId}`;
     if (location.pathname.includes('/work-items')) return 'Work Items';
     if (location.pathname.includes('/dora')) return 'DORA Health';

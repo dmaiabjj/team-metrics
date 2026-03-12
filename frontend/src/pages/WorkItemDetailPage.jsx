@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router';
-import { useWorkItems } from '../api/hooks/useWorkItems';
+import DOMPurify from 'dompurify';
+import { useWorkItem } from '../api/hooks/useWorkItem';
 import { usePeriod } from '../context/PeriodContext';
 import { TEAM_LABELS } from '../lib/constants';
 import { fmtDate, fmtDateTime } from '../lib/formatters';
@@ -23,8 +24,7 @@ export default function WorkItemDetailPage() {
   const navigate = useNavigate();
   const { periodStart, periodEnd } = usePeriod();
 
-  const { data, isLoading, error } = useWorkItems(teamId, periodStart, periodEnd, { limit: 500 });
-  const wi = data?.items?.find((w) => String(w.id) === String(itemId));
+  const { data: wi, isLoading, error } = useWorkItem(teamId, itemId, periodStart, periodEnd);
 
   return (
     <div style={{ padding: 32 }} className="animate-fade-in">
@@ -38,9 +38,9 @@ export default function WorkItemDetailPage() {
       {isLoading && <Loader />}
       {error && <ErrorBox message={error.message} />}
 
-      {!isLoading && !wi && data && (
+      {!isLoading && !wi && !error && (
         <div style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-          Work item #{itemId} not found in current period
+          Work item #{itemId} not found
         </div>
       )}
 
@@ -76,7 +76,7 @@ export default function WorkItemDetailPage() {
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Description</div>
                 <div
                   style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', opacity: 0.8 }}
-                  dangerouslySetInnerHTML={{ __html: wi.description }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(wi.description) }}
                 />
               </div>
             )}
@@ -87,10 +87,12 @@ export default function WorkItemDetailPage() {
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Hierarchy</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {wi.parent_epic && (
-                    <HierarchyItem level="Epic" id={wi.parent_epic.id} title={wi.parent_epic.title} color="#a78bfa" />
+                    <HierarchyItem level="Epic" id={wi.parent_epic.id} title={wi.parent_epic.title} color="#a78bfa"
+                      onClick={() => navigate(`/teams/${teamId}/work-items/${wi.parent_epic.id}`)} />
                   )}
                   {wi.parent_feature && (
-                    <HierarchyItem level="Feature" id={wi.parent_feature.id} title={wi.parent_feature.title} color="#60a5fa" />
+                    <HierarchyItem level="Feature" id={wi.parent_feature.id} title={wi.parent_feature.title} color="#60a5fa"
+                      onClick={() => navigate(`/teams/${teamId}/work-items/${wi.parent_feature.id}`)} />
                   )}
                   <HierarchyItem level={wi.work_item_type} id={wi.id} title={wi.title} color="#f59e0b" active />
                 </div>
@@ -244,20 +246,34 @@ export default function WorkItemDetailPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {wi.child_bugs.map((bug) => (
-                    <div key={bug.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      background: 'var(--surface2)', borderRadius: 10, padding: '10px 14px',
-                      cursor: 'pointer', transition: 'background .15s',
-                    }}
+                    <ChildItemRow
+                      key={bug.id}
+                      icon="🐛"
+                      item={bug}
                       onClick={() => navigate(`/teams/${teamId}/work-items/${bug.id}`)}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface3)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'var(--surface2)'}
-                    >
-                      <span style={{ color: '#ef4444', fontSize: 14 }}>🐛</span>
-                      <span className="wi-id" style={{ fontSize: 12, color: 'var(--accent)', flexShrink: 0 }}>#{bug.id}</span>
-                      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bug.title}</span>
-                      {bug.state && <StatusBadge status={bug.state} />}
-                    </div>
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Child Tasks */}
+            {wi.child_tasks?.length > 0 && (
+              <div style={card}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>Child Tasks</div>
+                  <span style={{ color: '#60a5fa', fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                    {wi.child_tasks.length} task{wi.child_tasks.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {wi.child_tasks.map((task) => (
+                    <ChildItemRow
+                      key={task.id}
+                      icon="📋"
+                      item={task}
+                      onClick={() => navigate(`/teams/${teamId}/work-items/${task.id}`)}
+                    />
                   ))}
                 </div>
               </div>
@@ -428,14 +444,25 @@ function TimelineRow({ label, dateStr }) {
   );
 }
 
-function HierarchyItem({ level, id, title, color, active }) {
+function HierarchyItem({ level, id, title, color, active, onClick }) {
+  const isClickable = !!onClick && !active;
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12, borderRadius: 10,
-      padding: '10px 14px', border: '1px solid',
-      background: active ? 'var(--accent-soft)' : 'var(--surface2)',
-      borderColor: active ? 'var(--accent)' : 'var(--border)',
-    }}>
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12, borderRadius: 10,
+        padding: '10px 14px', border: '1px solid',
+        background: active ? 'var(--accent-soft)' : 'var(--surface2)',
+        borderColor: active ? 'var(--accent)' : 'var(--border)',
+        cursor: isClickable ? 'pointer' : 'default',
+        transition: 'border-color 0.15s, background 0.15s',
+      }}
+      onClick={isClickable ? onClick : undefined}
+      onMouseEnter={isClickable ? (e) => { e.currentTarget.style.borderColor = color; } : undefined}
+      onMouseLeave={isClickable ? (e) => { e.currentTarget.style.borderColor = 'var(--border)'; } : undefined}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+    >
       <div style={{ width: 5, height: 32, borderRadius: 99, background: color, flexShrink: 0 }} />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
@@ -446,6 +473,25 @@ function HierarchyItem({ level, id, title, color, active }) {
           {title || '—'}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChildItemRow({ icon, item, onClick }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      background: 'var(--surface2)', borderRadius: 10, padding: '10px 14px',
+      cursor: 'pointer', transition: 'background .15s',
+    }}
+      onClick={onClick}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface3)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'var(--surface2)'}
+    >
+      <span style={{ fontSize: 14 }}>{icon}</span>
+      <span className="wi-id" style={{ fontSize: 12, color: 'var(--accent)', flexShrink: 0 }}>#{item.id}</span>
+      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+      {item.state && <StatusBadge status={item.state} />}
     </div>
   );
 }

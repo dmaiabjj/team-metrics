@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import StatusBadge from '../shared/StatusBadge';
 
-export default function WorkItemRow({ wi, onWorkItemClick, showParent }) {
+export default function WorkItemRow({ wi, onWorkItemClick, showParent, onParentClick }) {
   const [bugsOpen, setBugsOpen] = useState(false);
   const bugs = wi.child_bugs?.length > 0 ? wi.child_bugs : [];
   const hasBugs = bugs.length > 0;
@@ -18,8 +18,24 @@ export default function WorkItemRow({ wi, onWorkItemClick, showParent }) {
         {showParent && (
           <td style={{ minWidth: 140, maxWidth: 200 }}>
             <div style={{ fontSize: 10, color: 'var(--muted)' }}>
-              {wi.parent_epic?.title && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📦 {wi.parent_epic.title}</div>}
-              {wi.parent_feature?.title && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>→ {wi.parent_feature.title}</div>}
+              {wi.parent_epic?.title && (
+                <div
+                  style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: onParentClick ? 'pointer' : 'default' }}
+                  onClick={(e) => { if (onParentClick) { e.stopPropagation(); onParentClick(wi.parent_epic.id); } }}
+                  title={`Epic #${wi.parent_epic.id}: ${wi.parent_epic.title}`}
+                >
+                  📦 <span className={onParentClick ? 'tbl-link' : ''} style={onParentClick ? { color: 'var(--accent)' } : {}}>{wi.parent_epic.title}</span>
+                </div>
+              )}
+              {wi.parent_feature?.title && (
+                <div
+                  style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: onParentClick ? 'pointer' : 'default' }}
+                  onClick={(e) => { if (onParentClick) { e.stopPropagation(); onParentClick(wi.parent_feature.id); } }}
+                  title={`Feature #${wi.parent_feature.id}: ${wi.parent_feature.title}`}
+                >
+                  → <span className={onParentClick ? 'tbl-link' : ''} style={onParentClick ? { color: 'var(--accent)' } : {}}>{wi.parent_feature.title}</span>
+                </div>
+              )}
             </div>
           </td>
         )}

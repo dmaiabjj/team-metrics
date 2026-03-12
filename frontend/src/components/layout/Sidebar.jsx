@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router';
-import { PanelLeftClose, PanelLeftOpen, LayoutDashboard, Activity } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, LayoutDashboard, Activity, TrendingUp } from 'lucide-react';
 import { TEAMS, TEAM_LABELS, TEAM_COLORS, TEAM_ICONS } from '../../lib/constants';
 
 const SIDEBAR_STORAGE_KEY = 'sidebar-expanded';
@@ -25,6 +25,7 @@ export default function Sidebar() {
 
   const activePage = (() => {
     if (location.pathname === '/') return 'overview';
+    if (location.pathname === '/performance') return 'performance';
     if (location.pathname.includes('/dora')) return 'dora';
     if (location.pathname.match(/^\/teams\/[^/]+$/)) return 'team';
     return 'team'; // kpi, work-items, etc. are sub-pages of team
@@ -32,6 +33,7 @@ export default function Sidebar() {
 
   const NAV = [
     { id: 'overview', icon: 'overview', label: 'Overview', section: 'General' },
+    { id: 'performance', icon: 'performance', label: 'Performance', section: 'General' },
     ...TEAMS.map(t => ({ id: 'team-' + t, team: t, icon: TEAM_ICONS[t], label: TEAM_LABELS[t], type: 'team', section: 'Teams' })),
     { id: 'sep' },
     ...TEAMS.map(t => ({ id: 'dora-' + t, team: t, icon: 'dora', label: TEAM_LABELS[t], type: 'dora', section: 'DORA' })),
@@ -39,13 +41,15 @@ export default function Sidebar() {
 
   const isActive = (item) => {
     if (item.id === 'overview') return activePage === 'overview';
+    if (item.id === 'performance') return activePage === 'performance';
     if (item.type === 'team') return activePage === 'team' && teamId === item.team;
     if (item.type === 'dora') return activePage === 'dora' && teamId === item.team;
     return false;
   };
 
   const handleNav = (item) => {
-    if (item.type === 'team') navigate(`/teams/${item.team}`);
+    if (item.id === 'performance') navigate('/performance');
+    else if (item.type === 'team') navigate(`/teams/${item.team}`);
     else if (item.type === 'dora') navigate(`/teams/${item.team}/dora`);
     else navigate('/');
   };
@@ -84,6 +88,7 @@ export default function Sidebar() {
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleNav(item); } }}
           >
             {item.icon === 'overview' ? <LayoutDashboard className="nav-icon-symbol" size={18} strokeWidth={2} /> :
+              item.icon === 'performance' ? <TrendingUp className="nav-icon-symbol" size={18} strokeWidth={2} /> :
               item.icon === 'dora' ? <Activity className="nav-icon-symbol" size={18} strokeWidth={2} /> :
               <span className="nav-icon-symbol">{item.icon}</span>}
             <span className="nav-icon-label">{item.label}</span>

@@ -103,7 +103,7 @@ export const KPI_META = {
     desc: 'Production deployments per day',
     unit: '/d',
     lower_better: false,
-    thresholds: { good: 1.0, warn: 0.14 },
+    thresholds: { good: 1.0, warn: 0.25 },
   },
   lead_time: {
     label: 'Lead Time',
@@ -113,7 +113,7 @@ export const KPI_META = {
     unit: 'd',
     displayUnit: 'h', // show hours in DORA UI to match kpi_report
     lower_better: true,
-    thresholds: { good: 1, warn: 7 },
+    thresholds: { good: 7, warn: 14 },
   },
 };
 

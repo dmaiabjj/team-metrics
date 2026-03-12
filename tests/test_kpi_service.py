@@ -67,6 +67,7 @@ def _make_deliverable(
     developer: str | None = None,
     qa: str | None = None,
     is_technical_debt: bool = False,
+    is_delivered: bool | None = None,
 ) -> DeliverableRow:
     timeline = []
     if timeline_canons:
@@ -76,6 +77,11 @@ def _make_deliverable(
                 state=f"state_{canon}",
                 canonical_status=canon,
             ))
+    # Tech-debt and work items use is_delivered (committed+Delivered); default for Delivered items
+    if is_delivered is None and canonical_status == "Delivered":
+        is_delivered = True
+    elif is_delivered is None:
+        is_delivered = False
     return DeliverableRow(
         id=wid,
         work_item_type="User Story",
@@ -92,6 +98,7 @@ def _make_deliverable(
         developer=developer,
         qa=qa,
         is_technical_debt=is_technical_debt,
+        is_delivered=is_delivered,
     )
 
 
@@ -1014,12 +1021,24 @@ class TestComputeTechDebtRatio:
         assert result.rag == RAGStatus.RED
 
     def test_non_delivered_items_excluded(self):
-        """Only 'Delivered' items count, others are excluded from ratio."""
+        """Only committed+delivered (is_delivered) items count; matches work items page."""
         items = [
             _make_deliverable(1, canonical_status="Delivered", is_technical_debt=True),
             _make_deliverable(2, canonical_status="Delivered"),
             _make_deliverable(3, canonical_status="Under Development", is_technical_debt=True),
             _make_deliverable(4, canonical_status="Under QA"),
+        ]
+        result = compute_tech_debt_ratio(items, _DEFAULT_TD_CONFIG)
+        assert result.total_deployed == 2
+        assert result.tech_debt_count == 1
+        assert result.value == pytest.approx(0.5)
+
+    def test_delivered_not_committed_excluded(self):
+        """Items with canonical_status=Delivered but is_delivered=False are excluded."""
+        items = [
+            _make_deliverable(1, canonical_status="Delivered", is_delivered=True, is_technical_debt=True),
+            _make_deliverable(2, canonical_status="Delivered", is_delivered=True),
+            _make_deliverable(3, canonical_status="Delivered", is_delivered=False),
         ]
         result = compute_tech_debt_ratio(items, _DEFAULT_TD_CONFIG)
         assert result.total_deployed == 2

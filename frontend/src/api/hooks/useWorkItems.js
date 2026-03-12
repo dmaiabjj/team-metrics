@@ -1,17 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../client';
+import { api, buildUrl } from '../client';
 
 export function useWorkItems(teamId, periodStart, periodEnd, filters = {}) {
-  const params = new URLSearchParams({
-    start_date: periodStart,
-    end_date: periodEnd,
-  });
-  if (filters.skip) params.set('skip', String(filters.skip));
-  if (filters.limit) params.set('limit', String(filters.limit));
-
   return useQuery({
     queryKey: ['work-items', teamId, periodStart, periodEnd, filters],
-    queryFn: () => api(`/teams/${teamId}/work-items?${params.toString()}`),
+    queryFn: ({ signal }) =>
+      api(
+        buildUrl(`/teams/${teamId}/work-items`, {
+          start_date: periodStart,
+          end_date: periodEnd,
+          skip: filters.skip || undefined,
+          limit: filters.limit || undefined,
+        }),
+        { signal },
+      ),
     enabled: !!teamId && !!periodStart && !!periodEnd,
     staleTime: 2 * 60 * 1000,
   });

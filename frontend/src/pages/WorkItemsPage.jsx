@@ -8,6 +8,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 import Breadcrumb from '../components/shared/Breadcrumb';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
+import DeveloperSummary from '../components/shared/DeveloperSummary';
 
 const FLAG_TABS = [
   { key: '', label: 'All' },
@@ -36,6 +37,7 @@ export default function WorkItemsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [flagFilter, setFlagFilter] = useState(searchParams.get('filter') || '');
+  const [groupByEpic, setGroupByEpic] = useState(false);
 
   const { data, isLoading, error } = useWorkItems(teamId, periodStart, periodEnd, { limit: 500 });
 
@@ -63,6 +65,25 @@ export default function WorkItemsPage() {
     if (typeFilter) list = list.filter((w) => w.work_item_type === typeFilter);
     return list;
   }, [data, search, statusFilter, typeFilter, flagFilter]);
+
+  const epicGroups = useMemo(() => {
+    if (!groupByEpic) return null;
+    const map = new Map();
+    for (const wi of items) {
+      const eid = wi.parent_epic?.id ?? 0;
+      if (!map.has(eid)) {
+        map.set(eid, { epicId: eid, epicTitle: wi.parent_epic?.title || null, items: [] });
+      }
+      map.get(eid).items.push(wi);
+    }
+    const groups = [...map.values()];
+    groups.sort((a, b) => {
+      if (a.epicId === 0) return 1;
+      if (b.epicId === 0) return -1;
+      return (a.epicTitle || '').localeCompare(b.epicTitle || '');
+    });
+    return groups;
+  }, [items, groupByEpic]);
 
   const statuses = useMemo(() => {
     if (!data?.items) return [];
@@ -112,7 +133,7 @@ export default function WorkItemsPage() {
       </div>
 
       {/* Flag toggle tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         {FLAG_TABS.map((tab) => (
           <button key={tab.key} onClick={() => setFlagFilter(tab.key)} style={{
             padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700,
@@ -125,6 +146,17 @@ export default function WorkItemsPage() {
             {tab.label}
           </button>
         ))}
+        <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+        <button onClick={() => setGroupByEpic(!groupByEpic)} style={{
+          padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+          fontFamily: 'var(--font-mono)', border: '1px solid',
+          cursor: 'pointer', transition: 'all .15s',
+          background: groupByEpic ? 'var(--accent-soft)' : 'var(--surface)',
+          borderColor: groupByEpic ? 'var(--accent)' : 'var(--border)',
+          color: groupByEpic ? 'var(--accent)' : 'var(--muted)',
+        }}>
+          Group by Epic
+        </button>
       </div>
 
       {/* Results count */}
@@ -143,20 +175,36 @@ export default function WorkItemsPage() {
           <table className="tbl">
             <thead>
               <tr>
-                {['ID', 'Title', 'Type', 'Parent / Epic', 'Status', 'Developer', 'QA', 'Flags'].map(h => (
+                {(groupByEpic
+                  ? ['ID', 'Title', 'Type', 'Status', 'Developer', 'QA', 'Flags']
+                  : ['ID', 'Title', 'Type', 'Parent / Epic', 'Status', 'Developer', 'QA', 'Flags']
+                ).map(h => (
                   <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {items.map((wi) => (
-                <WorkItemRow
-                  key={wi.id}
-                  wi={wi}
-                  teamId={teamId}
-                  navigate={navigate}
-                />
-              ))}
+              {groupByEpic && epicGroups ? (
+                epicGroups.map((g) => (
+                  <EpicGroup
+                    key={g.epicId}
+                    group={g}
+                    teamId={teamId}
+                    navigate={navigate}
+                    colSpan={7}
+                  />
+                ))
+              ) : (
+                items.map((wi) => (
+                  <WorkItemRow
+                    key={wi.id}
+                    wi={wi}
+                    teamId={teamId}
+                    navigate={navigate}
+                    hideEpic={false}
+                  />
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -167,16 +215,52 @@ export default function WorkItemsPage() {
           No work items match the current filters
         </div>
       )}
+
+      {/* ── Developer Summary ─────────────────────────────────────── */}
+      {!isLoading && items.length > 0 && (
+        <DeveloperSummary items={items} onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)} />
+      )}
     </div>
   );
 }
 
 /* ── Row with bug drilldown ──────────────────────────────────────────── */
 
-function WorkItemRow({ wi, teamId, navigate }) {
+function EpicGroup({ group, teamId, navigate, colSpan }) {
+  return (
+    <>
+      <tr>
+        <td colSpan={colSpan} style={{
+          padding: '10px 14px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)',
+          fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text)',
+        }}>
+          {group.epicId !== 0 ? (
+            <span
+              style={{ cursor: 'pointer' }}
+              onClick={() => navigate(`/teams/${teamId}/work-items/${group.epicId}`)}
+            >
+              <span style={{ opacity: 0.6, marginRight: 6 }}>Epic</span>
+              <span style={{ color: 'var(--accent)' }}>{group.epicTitle}</span>
+              <span style={{ opacity: 0.5, marginLeft: 6 }}>#{group.epicId}</span>
+            </span>
+          ) : (
+            <span style={{ opacity: 0.5 }}>No Epic</span>
+          )}
+          <span style={{ opacity: 0.4, marginLeft: 8 }}>· {group.items.length} items</span>
+        </td>
+      </tr>
+      {group.items.map((wi) => (
+        <WorkItemRow key={wi.id} wi={wi} teamId={teamId} navigate={navigate} hideEpic />
+      ))}
+    </>
+  );
+}
+
+function WorkItemRow({ wi, teamId, navigate, hideEpic }) {
   const [bugsOpen, setBugsOpen] = useState(false);
   const bugs = wi.child_bugs?.length > 0 ? wi.child_bugs : [];
   const hasBugs = bugs.length > 0;
+  const cols = hideEpic ? 7 : 8;
 
   return (
     <>
@@ -193,18 +277,30 @@ function WorkItemRow({ wi, teamId, navigate }) {
         <td style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
           {wi.work_item_type}
         </td>
-        <td style={{ fontSize: 10, color: 'var(--muted)', maxWidth: 200 }}>
-          {wi.parent_epic?.title && (
-            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              <span style={{ opacity: 0.6 }}>Epic:</span> {wi.parent_epic.title}
-            </div>
-          )}
-          {wi.parent_feature?.title && (
-            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              <span style={{ opacity: 0.6 }}>→</span> {wi.parent_feature.title}
-            </div>
-          )}
-        </td>
+        {!hideEpic && (
+          <td style={{ fontSize: 10, color: 'var(--muted)', maxWidth: 200 }}>
+            {wi.parent_epic?.title && (
+              <div
+                style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                onClick={(e) => { e.stopPropagation(); navigate(`/teams/${teamId}/work-items/${wi.parent_epic.id}`); }}
+                title={`Epic #${wi.parent_epic.id}: ${wi.parent_epic.title}`}
+              >
+                <span style={{ opacity: 0.6 }}>Epic:</span>{' '}
+                <span className="tbl-link" style={{ color: 'var(--accent)', fontSize: 10 }}>{wi.parent_epic.title}</span>
+              </div>
+            )}
+            {wi.parent_feature?.title && (
+              <div
+                style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                onClick={(e) => { e.stopPropagation(); navigate(`/teams/${teamId}/work-items/${wi.parent_feature.id}`); }}
+                title={`Feature #${wi.parent_feature.id}: ${wi.parent_feature.title}`}
+              >
+                <span style={{ opacity: 0.6 }}>→</span>{' '}
+                <span className="tbl-link" style={{ color: 'var(--accent)', fontSize: 10 }}>{wi.parent_feature.title}</span>
+              </div>
+            )}
+          </td>
+        )}
         <td><StatusBadge status={wi.canonical_status} /></td>
         <td style={{ fontSize: 12 }}>{wi.developer || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
         <td style={{ fontSize: 12 }}>{wi.qa || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
@@ -229,7 +325,7 @@ function WorkItemRow({ wi, teamId, navigate }) {
       {/* Bug drilldown panel */}
       {bugsOpen && hasBugs && (
         <tr>
-          <td colSpan={8} style={{ padding: 0, background: '#13101a', borderBottom: '2px solid #ef444430' }}>
+          <td colSpan={cols} style={{ padding: 0, background: '#13101a', borderBottom: '2px solid #ef444430' }}>
             <div className="bug-panel-inner">
               <div className="bug-panel-title">🐛 Child Bugs ({bugs.length})</div>
               {bugs.map((bug, bi) => (

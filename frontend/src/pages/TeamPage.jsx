@@ -4,11 +4,12 @@ import { useWorkItems } from '../api/hooks/useWorkItems';
 import { usePeriod } from '../context/PeriodContext';
 import { TEAM_LABELS, TEAM_ICONS, TEAM_COLORS, KPI_KEYS, DORA_KEYS, KPI_META, KPI_SLUG, DORA_LEVELS } from '../lib/constants';
 import { Activity } from 'lucide-react';
-import { fmt, fmtDate, kpiColor, kpiStatus, valFromKpis, doraLevel } from '../lib/formatters';
+import { fmt, fmtDate, kpiColor, kpiStatus, valFromKpis, ragFromKpis, ragToStatus, ragColor, doraLevel } from '../lib/formatters';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
 import Breadcrumb from '../components/shared/Breadcrumb';
 import WorkItemsTable from '../components/tables/WorkItemsTable';
+import DeveloperSummary from '../components/shared/DeveloperSummary';
 
 const KPI_CATEGORIES = [
   { id: 'quality',     label: 'System Quality & Stability',                    shortLabel: 'Quality',     icon: '🔬', color: '#ef4444', bg: '#fee2e2', keys: ['rework_rate'] },
@@ -20,11 +21,11 @@ const KPI_CATEGORIES = [
 const KPI_TO_CATEGORY = Object.fromEntries(KPI_CATEGORIES.flatMap(c => c.keys.map(k => [k, c])));
 
 /* ── KPI Hero Card (reference-matched) ──────────────────────────────────── */
-function KpiHeroCard({ kpiKey, value, onClick }) {
+function KpiHeroCard({ kpiKey, value, rag, onClick }) {
   const m = KPI_META[kpiKey];
   if (!m) return null;
-  const color = kpiColor(kpiKey, value);
-  const status = kpiStatus(kpiKey, value);
+  const color = rag ? ragColor(rag) : kpiColor(kpiKey, value);
+  const status = rag ? ragToStatus(rag) : kpiStatus(kpiKey, value);
   const statusBg = { good: '#d1fae5', warn: '#fef3c7', bad: '#fee2e2', unknown: 'var(--surface3)' }[status] ?? 'var(--surface3)';
 
   // Normalised progress bar width
@@ -100,6 +101,7 @@ export default function TeamPage() {
 
   const { data, isLoading, error } = useTeamKpis(teamId, periodStart, periodEnd);
   const { data: wiData, isLoading: wiLoading } = useWorkItems(teamId, periodStart, periodEnd, { limit: 6 });
+  const { data: allWiData } = useWorkItems(teamId, periodStart, periodEnd, { limit: 500 });
 
   const allKpis = [...(data?.kpis || []), ...(data?.dora || [])];
   const snap = data?.delivery_snapshot;
@@ -107,9 +109,9 @@ export default function TeamPage() {
   const teamLabel = TEAM_LABELS[teamId] || teamId;
 
   /* Health ring: count good / warn / bad KPIs */
-  const goodCount = KPI_KEYS.filter(k => kpiStatus(k, valFromKpis(allKpis, k)) === 'good').length;
-  const warnCount = KPI_KEYS.filter(k => kpiStatus(k, valFromKpis(allKpis, k)) === 'warn').length;
-  const badCount  = KPI_KEYS.filter(k => kpiStatus(k, valFromKpis(allKpis, k)) === 'bad').length;
+  const goodCount = KPI_KEYS.filter(k => ragToStatus(ragFromKpis(allKpis, k)) === 'good').length;
+  const warnCount = KPI_KEYS.filter(k => ragToStatus(ragFromKpis(allKpis, k)) === 'warn').length;
+  const badCount  = KPI_KEYS.filter(k => ragToStatus(ragFromKpis(allKpis, k)) === 'bad').length;
   const healthPct = KPI_KEYS.length > 0 ? Math.round((goodCount / KPI_KEYS.length) * 100) : null;
   const healthColor = healthPct == null ? '#94a3b8' : healthPct >= 70 ? '#10b981' : healthPct >= 45 ? '#f59e0b' : '#ef4444';
   const circ = 2 * Math.PI * 22;
@@ -188,14 +190,14 @@ export default function TeamPage() {
             <div style={{ display: 'flex', gap: 4, height: 10, borderRadius: 6, overflow: 'hidden', marginBottom: 6 }}>
               {KPI_KEYS.map(k => (
                 <div key={k} title={KPI_META[k]?.label}
-                  style={{ flex: 1, background: kpiColor(k, valFromKpis(allKpis, k)), borderRadius: 2, cursor: 'pointer' }}
+                  style={{ flex: 1, background: ragColor(ragFromKpis(allKpis, k)), borderRadius: 2, cursor: 'pointer' }}
                   onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[k]}`)} />
               ))}
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
               {KPI_KEYS.map(k => {
                 const v = valFromKpis(allKpis, k);
-                const c = kpiColor(k, v);
+                const c = ragColor(ragFromKpis(allKpis, k));
                 const cat = KPI_TO_CATEGORY[k];
                 return (
                   <div key={k} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'pointer' }}
@@ -237,6 +239,7 @@ export default function TeamPage() {
                         key={k}
                         kpiKey={k}
                         value={valFromKpis(allKpis, k)}
+                        rag={ragFromKpis(allKpis, k)}
                         onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[k]}`)}
                       />
                     ))}
@@ -392,10 +395,16 @@ export default function TeamPage() {
           <WorkItemsTable
             items={wiData.items.slice(0, 6)}
             onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)}
+            onParentClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)}
             showParent
           />
         )}
       </div>
+
+      {/* ── Developer Summary ─────────────────────────────────────── */}
+      {allWiData?.items && allWiData.items.length > 0 && (
+        <DeveloperSummary items={allWiData.items} onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)} />
+      )}
     </div>
   );
 }

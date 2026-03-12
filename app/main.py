@@ -16,6 +16,14 @@ from app.api.cache import router as cache_router
 from app.api.dashboard import router as dashboard_router
 from app.api.teams import router as teams_router
 from app.cache import AzureResponseCache, DeploymentCache, ReportCache, WorkItemCache
+from app.exceptions import (
+    AzureDevOpsUnavailableError,
+    InvalidDateRangeError,
+    KPINotEnabledError,
+    ReportTimeoutError,
+    TeamMetricsError,
+    TeamNotFoundError,
+)
 from app.rate_limit import limiter
 from app.config.kpi_loader import load_kpi_config
 from app.config.team_loader import load_teams_config
@@ -110,9 +118,19 @@ app.state.limiter = limiter
 
 # CORS middleware
 _settings = get_settings()
+_cors_origins = _settings.cors_origins
+if not _cors_origins:
+    if _settings.is_production:
+        logger.warning(
+            "CORS_ORIGINS not configured in production — defaulting to no origins allowed. "
+            "Set CORS_ORIGINS env var to allow frontend access."
+        )
+        _cors_origins = []
+    else:
+        _cors_origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_settings.cors_origins or ["*"],
+    allow_origins=_cors_origins,
     allow_methods=["GET", "DELETE"],
     allow_headers=["X-API-Key"],
 )
@@ -130,7 +148,49 @@ app.include_router(cache_router, prefix="/cache", tags=["cache"])
 
 
 # ---------------------------------------------------------------------------
-# Global exception handler for unexpected errors
+# Domain exception handlers
+# ---------------------------------------------------------------------------
+
+
+@app.exception_handler(TeamNotFoundError)
+async def team_not_found_handler(request: Request, exc: TeamNotFoundError):
+    body = ErrorResponse(detail=str(exc), error_code=exc.error_code)
+    return JSONResponse(status_code=404, content=body.model_dump())
+
+
+@app.exception_handler(AzureDevOpsUnavailableError)
+async def azure_unavailable_handler(request: Request, exc: AzureDevOpsUnavailableError):
+    body = ErrorResponse(detail=str(exc), error_code=exc.error_code)
+    return JSONResponse(status_code=503, content=body.model_dump())
+
+
+@app.exception_handler(ReportTimeoutError)
+async def report_timeout_handler(request: Request, exc: ReportTimeoutError):
+    body = ErrorResponse(detail=str(exc), error_code=exc.error_code)
+    return JSONResponse(status_code=504, content=body.model_dump())
+
+
+@app.exception_handler(InvalidDateRangeError)
+async def invalid_date_range_handler(request: Request, exc: InvalidDateRangeError):
+    body = ErrorResponse(detail=str(exc), error_code=exc.error_code)
+    return JSONResponse(status_code=400, content=body.model_dump())
+
+
+@app.exception_handler(KPINotEnabledError)
+async def kpi_not_enabled_handler(request: Request, exc: KPINotEnabledError):
+    body = ErrorResponse(detail=str(exc), error_code=exc.error_code)
+    return JSONResponse(status_code=404, content=body.model_dump())
+
+
+@app.exception_handler(TeamMetricsError)
+async def domain_error_handler(request: Request, exc: TeamMetricsError):
+    """Catch-all for domain errors not handled by more specific handlers."""
+    body = ErrorResponse(detail=str(exc), error_code=exc.error_code)
+    return JSONResponse(status_code=400, content=body.model_dump())
+
+
+# ---------------------------------------------------------------------------
+# External error handlers
 # ---------------------------------------------------------------------------
 
 @app.exception_handler(httpx.HTTPStatusError)

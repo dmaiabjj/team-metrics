@@ -12,6 +12,12 @@ from app.adapters.azure_devops import AzureDevOpsClient
 from app.cache import DeploymentCache
 from app.config.kpi_loader import FlowHygieneConfig
 from app.config.team_loader import DeployFrequencyTeamConfig, TeamConfig, load_teams_config
+from app.exceptions import (
+    AzureDevOpsUnavailableError,
+    InvalidDateRangeError,
+    ReportTimeoutError,
+    TeamNotFoundError,
+)
 from app.services.report_service import run_report
 from app.settings import get_settings
 
@@ -20,37 +26,36 @@ logger = logging.getLogger(__name__)
 
 def validate_date_range(start_date: date, end_date: date) -> None:
     if start_date > end_date:
-        raise HTTPException(status_code=400, detail="start_date must be <= end_date")
+        raise InvalidDateRangeError("start_date must be <= end_date")
     settings = get_settings()
     delta = (end_date - start_date).days
     if delta > settings.max_date_range_days:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Date range exceeds maximum of {settings.max_date_range_days} days",
+        raise InvalidDateRangeError(
+            f"Date range exceeds maximum of {settings.max_date_range_days} days"
         )
+
+
+def validate_team_id(team_id: str) -> None:
+    """Validate that team_id is a known team. Raises TeamNotFoundError if not."""
+    teams = load_teams_config()
+    if team_id not in teams:
+        raise TeamNotFoundError(team_id, known_teams=list(teams.keys()))
 
 
 def get_azure_client(request: Request) -> AzureDevOpsClient:
     """FastAPI dependency -- returns the shared AzureDevOpsClient from app state."""
     client = getattr(request.app.state, "azure_client", None)
     if client is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Azure DevOps not configured: set AZURE_DEVOPS_ORG and AZURE_DEVOPS_PAT",
-        )
+        raise AzureDevOpsUnavailableError()
     return client
 
 
 async def get_team_report(request: Request, team_id: str, start_date: date, end_date: date):
     """Validate inputs, fetch one team report, return (report, deliverables)."""
     validate_date_range(start_date, end_date)
-    teams = load_teams_config()
-    if team_id not in teams:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unknown team_id: {team_id}. Known: {list(teams.keys())}",
-        )
+    validate_team_id(team_id)
     client = get_azure_client(request)
+    teams = load_teams_config()
     report_cache = getattr(request.app.state, "report_cache", None)
     wi_cache = getattr(request.app.state, "wi_cache", None)
     settings = get_settings()
@@ -63,10 +68,7 @@ async def get_team_report(request: Request, team_id: str, start_date: date, end_
             timeout=settings.report_timeout,
         )
     except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail=f"Report generation timed out after {settings.report_timeout}s",
-        ) from None
+        raise ReportTimeoutError(settings.report_timeout) from None
     return report
 
 
@@ -216,10 +218,7 @@ async def fetch_all_reports(request: Request, start_date: date, end_date: date):
             timeout=settings.report_timeout,
         )
     except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail=f"Report generation timed out after {settings.report_timeout}s",
-        ) from None
+        raise ReportTimeoutError(settings.report_timeout) from None
     return team_ids, results
 
 

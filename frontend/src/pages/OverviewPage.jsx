@@ -3,7 +3,7 @@ import { Activity } from 'lucide-react';
 import { useDashboard } from '../api/hooks/useDashboard';
 import { usePeriod } from '../context/PeriodContext';
 import { TEAMS, TEAM_LABELS, TEAM_COLORS, TEAM_ICONS, KPI_KEYS, DORA_KEYS, KPI_META, DORA_LEVELS, ALL_KPI_KEYS } from '../lib/constants';
-import { fmt, fmtDate, kpiColor, kpiStatus, doraLevel, valFromKpis } from '../lib/formatters';
+import { fmt, fmtDate, kpiColor, kpiStatus, doraLevel, valFromKpis, ragFromKpis, ragToStatus, ragColor } from '../lib/formatters';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
 
@@ -13,14 +13,15 @@ export default function OverviewPage() {
 
   // Build cross-team averages from dashboard data
   const avgKpis = {};
-  if (data?.kpis) data.kpis.forEach((k) => { avgKpis[k.name] = k.value; });
-  if (data?.dora) data.dora.forEach((k) => { avgKpis[k.name] = k.value; });
+  const avgRags = {};
+  if (data?.kpis) data.kpis.forEach((k) => { avgKpis[k.name] = k.value; avgRags[k.name] = k.rag; });
+  if (data?.dora) data.dora.forEach((k) => { avgKpis[k.name] = k.value; avgRags[k.name] = k.rag; });
 
   // Fleet health stats
   const teams = data?.teams || [];
   const allStatuses = teams.flatMap(t => {
     const kpis = [...(t.kpis || []), ...(t.dora || [])];
-    return KPI_KEYS.map(k => kpiStatus(k, valFromKpis(kpis, k)));
+    return KPI_KEYS.map(k => ragToStatus(ragFromKpis(kpis, k)));
   });
   const fleetGood = allStatuses.filter(s => s === 'good').length;
   const fleetWarn = allStatuses.filter(s => s === 'warn').length;
@@ -88,7 +89,7 @@ export default function OverviewPage() {
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 4 }}>Cross-team avg per KPI</div>
             {KPI_KEYS.map(k => {
               const v = avgKpis[k];
-              const c = kpiColor(k, v);
+              const c = ragColor(avgRags[k]);
               const pct = v != null ? Math.min(100, Math.round(
                 k === 'flow_hygiene' ? Math.max(0, (1 - v / 2) * 100) :
                   KPI_META[k].lower_better ? Math.max(0, (1 - v) * 100) : v * 100
@@ -164,70 +165,134 @@ export default function OverviewPage() {
             const team = teamEntry.team_id;
             const teamKpis = [...(teamEntry.kpis || []), ...(teamEntry.dora || [])];
             const color = TEAM_COLORS[team];
-            const goodCount = KPI_KEYS.filter(k => kpiStatus(k, valFromKpis(teamKpis, k)) === 'good').length;
+            const goodCount = KPI_KEYS.filter(k => ragToStatus(ragFromKpis(teamKpis, k)) === 'good').length;
+            const warnCount = KPI_KEYS.filter(k => ragToStatus(ragFromKpis(teamKpis, k)) === 'warn').length;
+            const badCount = KPI_KEYS.length - goodCount - warnCount;
+            const healthPct = Math.round((goodCount / KPI_KEYS.length) * 100);
+            const healthColor = healthPct >= 70 ? 'var(--good)' : healthPct >= 45 ? 'var(--warn)' : 'var(--bad)';
+
+            // SVG ring constants
+            const ringR = 22, ringC = 2 * Math.PI * ringR;
+            const ringOffset = ringC - (ringC * healthPct / 100);
 
             return (
               <Link
                 key={team}
                 to={`/teams/${team}`}
-                className="card"
-                style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden', textDecoration: 'none', color: 'inherit', transition: 'all 0.15s' }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = `0 8px 24px ${color}25`; e.currentTarget.style.borderColor = color + '60'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+                style={{
+                  display: 'block', textDecoration: 'none', color: 'inherit',
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 18, overflow: 'hidden', position: 'relative',
+                  boxShadow: 'var(--shadow-sm)', transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-4px)';
+                  e.currentTarget.style.boxShadow = `0 12px 32px ${color}20, var(--shadow-md)`;
+                  e.currentTarget.style.borderColor = color + '50';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = '';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                }}
               >
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: color, borderRadius: '18px 18px 0 0' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 38, height: 38, borderRadius: 12, background: color + '20', border: `1px solid ${color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{TEAM_ICONS[team]}</div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{TEAM_LABELS[team]}</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>{team}</div>
+                {/* Colored left accent */}
+                <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 4, background: `linear-gradient(180deg, ${color}, ${color}70)`, borderRadius: '18px 0 0 18px' }} />
+
+                <div style={{ padding: '18px 22px 18px 26px', display: 'grid', gridTemplateColumns: 'minmax(160px, 200px) 1fr auto', gap: 20, alignItems: 'center' }}>
+
+                  {/* ── Left: identity + health ring ── */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ position: 'relative', width: 56, height: 56, flexShrink: 0 }}>
+                      <svg width="56" height="56" viewBox="0 0 56 56" style={{ transform: 'rotate(-90deg)' }}>
+                        <circle cx="28" cy="28" r={ringR} fill="none" stroke="var(--border)" strokeWidth="4.5" />
+                        <circle cx="28" cy="28" r={ringR} fill="none" stroke={healthColor} strokeWidth="4.5"
+                          strokeDasharray={ringC} strokeDashoffset={ringOffset}
+                          strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+                      </svg>
+                      <div style={{
+                        position: 'absolute', inset: 0, display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', fontSize: 20,
+                      }}>{TEAM_ICONS[team]}</div>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{TEAM_LABELS[team]}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        <span style={{ fontSize: 18, fontWeight: 900, color: healthColor, lineHeight: 1 }}>{goodCount}<span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>/{KPI_KEYS.length}</span></span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 5 }}>
+                        {[
+                          { count: goodCount, c: 'var(--good)', bg: 'var(--good-soft)' },
+                          { count: warnCount, c: 'var(--warn)', bg: 'var(--warn-soft)' },
+                          { count: badCount, c: 'var(--bad)', bg: 'var(--bad-soft)' },
+                        ].filter(x => x.count > 0).map(({ count, c: c2, bg }, i) => (
+                          <div key={i} style={{
+                            display: 'flex', alignItems: 'center', gap: 3,
+                            background: bg, borderRadius: 10, padding: '2px 7px',
+                          }}>
+                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: c2 }} />
+                            <span style={{ fontSize: 10, fontWeight: 800, color: c2 }}>{count}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color, letterSpacing: '-0.02em', lineHeight: 1 }}>{goodCount}/{KPI_KEYS.length}</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>healthy</div>
+
+                  {/* ── Center: KPI grid ── */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '5px 16px' }}>
+                    {KPI_KEYS.map(k => {
+                      const v = valFromKpis(teamKpis, k);
+                      const rag = ragFromKpis(teamKpis, k);
+                      const c = ragColor(rag);
+                      const pct = v != null ? Math.min(100, Math.round(
+                        k === 'flow_hygiene' ? Math.max(0, (1 - v / 2) * 100) :
+                          KPI_META[k].lower_better ? Math.max(0, (1 - v) * 100) : v * 100
+                      )) : 0;
+                      return (
+                        <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ fontSize: 10, flexShrink: 0, width: 12, textAlign: 'center' }}>{KPI_META[k].icon}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
+                              <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{KPI_META[k].label}</span>
+                              <span style={{ fontSize: 10, fontWeight: 800, color: c, fontFamily: 'var(--font-mono)', flexShrink: 0, marginLeft: 6 }}>{fmt(k, v)}</span>
+                            </div>
+                            <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: c, borderRadius: 2, transition: 'width 0.5s ease' }} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
 
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                  {KPI_KEYS.map(k => {
-                    const v = valFromKpis(teamKpis, k);
-                    const c = kpiColor(k, v);
-                    const s = kpiStatus(k, v);
-                    return (
-                      <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: s === 'good' ? '#d1fae5' : s === 'warn' ? '#fef3c7' : s === 'bad' ? '#fee2e2' : 'var(--surface2)', border: `1px solid ${c}30` }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: c, flexShrink: 0 }} />
-                        <span style={{ fontSize: 10, fontWeight: 700, color: c }}>{fmt(k, v)}</span>
-                        <span style={{ fontSize: 9, color: c, opacity: 0.8 }}>{KPI_META[k].label.split(' ').slice(-1)[0]}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div style={{ display: 'flex', gap: 2, height: 5, borderRadius: 4, overflow: 'hidden', marginBottom: 10 }}>
-                  {KPI_KEYS.map(k => (
-                    <div key={k} style={{ flex: 1, background: kpiColor(k, valFromKpis(teamKpis, k)), borderRadius: 1 }} title={KPI_META[k].label} />
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {DORA_KEYS.map(k => {
-                    const v = valFromKpis(teamKpis, k);
-                    const lv = doraLevel(k, v);
-                    return (
-                      <div key={k} style={{ flex: 1, background: 'var(--accent-soft)', border: '1px solid #c4b8fd', borderRadius: 9, padding: '6px 10px' }}>
-                        <div style={{ fontSize: 9, color: 'var(--accent)', fontWeight: 700, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Activity size={10} strokeWidth={2} />
-                          {KPI_META[k].label}
+                  {/* ── Right: DORA metrics ── */}
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                    paddingLeft: 16, borderLeft: '1px solid var(--border)',
+                    minWidth: 130,
+                  }}>
+                    {DORA_KEYS.map(k => {
+                      const v = valFromKpis(teamKpis, k);
+                      const lv = doraLevel(k, v);
+                      return (
+                        <div key={k}>
+                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Activity size={9} strokeWidth={2.5} />
+                            {KPI_META[k].label}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                            <span style={{ fontSize: 15, fontWeight: 900, color: lv?.color ?? 'var(--muted)', fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{fmt(k, v)}</span>
+                            {lv && <span style={{
+                              fontSize: 8, fontWeight: 800, color: lv.color,
+                              background: lv.color + '15', border: `1px solid ${lv.color}25`,
+                              borderRadius: 10, padding: '1px 6px', fontFamily: 'var(--font-mono)',
+                            }}>{lv.label}</span>}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                          <span style={{ fontSize: 15, fontWeight: 900, color: lv?.color ?? 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{fmt(k, v)}</span>
-                          {lv && <span style={{ fontSize: 9, fontWeight: 700, color: lv.color }}>{lv.label}</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </Link>
             );

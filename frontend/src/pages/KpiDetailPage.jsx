@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router';
 import { useKpiDetail } from '../api/hooks/useKpiDetail';
 import { usePeriod } from '../context/PeriodContext';
 import { TEAM_LABELS, KPI_META, SLUG_TO_KPI } from '../lib/constants';
-import { fmt, fmtDate, kpiColor, kpiStatus } from '../lib/formatters';
+import { fmt, fmtDate, kpiColor, kpiStatus, ragToStatus, ragColor } from '../lib/formatters';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
 import Breadcrumb from '../components/shared/Breadcrumb';
@@ -22,8 +22,9 @@ export default function KpiDetailPage() {
   const m = KPI_META[kpiKey];
 
   const mainVal = data?.kpi?.value ?? null;
-  const color = kpiColor(kpiKey, mainVal);
-  const status = kpiStatus(kpiKey, mainVal);
+  const mainRag = data?.kpi?.rag ?? null;
+  const color = mainRag ? ragColor(mainRag) : kpiColor(kpiKey, mainVal);
+  const status = mainRag ? ragToStatus(mainRag) : kpiStatus(kpiKey, mainVal);
   const kpi = data?.kpi || {};
   const getItems = () => data?.items || data?.deployments || [];
 
@@ -62,9 +63,9 @@ export default function KpiDetailPage() {
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                 {m?.lower_better ? 'lower is better' : 'higher is better'} · target{' '}
-                {m?.lower_better
-                  ? `≤${(m.thresholds.good * 100).toFixed(0)}${m.unit}`
-                  : `≥${(m.thresholds.good * 100).toFixed(0)}${m.unit}`}
+                {m?.unit === '%'
+                  ? (m.lower_better ? `≤${(m.thresholds.good * 100).toFixed(0)}%` : `≥${(m.thresholds.good * 100).toFixed(0)}%`)
+                  : (m?.lower_better ? `≤${m.thresholds.good}${m.unit}` : `≥${m.thresholds.good}${m.unit}`)}
               </div>
             </div>
           </div>
@@ -222,7 +223,7 @@ export default function KpiDetailPage() {
                   ) : kpiKey === 'rework_rate' ? (
                     <ReworkTable items={getItems()} onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)} />
                   ) : (
-                    <WorkItemsTable items={getItems()} onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)} />
+                    <WorkItemsTable items={getItems()} onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)} onParentClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)} />
                   )}
                 </>
               )}
