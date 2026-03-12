@@ -57,7 +57,7 @@ def _cache_key(*parts: object) -> str:
 def _cache_key_hash(*parts: object) -> str:
     """Build a short hash for complex key parts."""
     payload = json.dumps(parts, sort_keys=True, default=str)
-    return hashlib.md5(payload.encode()).hexdigest()
+    return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -455,6 +455,8 @@ class AzureDevOpsClient:
         logger.info("Batch fetched %d work items for project=%s", len(result), project)
         return result
 
+    @_with_circuit_breaker
+    @_azure_retry
     async def get_board_wip_limits(
         self,
         project: str,

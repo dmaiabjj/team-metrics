@@ -25,3 +25,13 @@ def committed_items(
         d for d in deliverables
         if d.is_spillover or date_in_range(d.start_date, start, end)
     ]
+
+
+def reached_qa(d: DeliverableRow, qa_canonical: str) -> bool:
+    """Check if a deliverable reached QA status at any point."""
+    return any(e.canonical_status == qa_canonical for e in d.status_timeline)
+
+
+def has_rework_tags(d: DeliverableRow, rework_tags: list[str]) -> bool:
+    """Check if a deliverable has any rework-indicating tags."""
+    return any(t in rework_tags for t in d.tags)

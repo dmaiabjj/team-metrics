@@ -6,7 +6,7 @@ export default function WorkItemsTable({ items, onWorkItemClick, showParent, onP
   }
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
+    <div className="tbl-scroll-wrap" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
       <table className="tbl">
         <thead>
           <tr>

@@ -33,23 +33,13 @@ from app.schemas.kpi import (
     WIPDisciplineKPI,
 )
 from app.schemas.report import DeliverableRow
-from app.services.common import committed_items, date_in_range
+from app.services.common import committed_items, date_in_range, has_rework_tags, reached_qa
 
-# Re-export for backwards compatibility with snapshot_service imports.
+# Re-export for backwards compatibility.
 _date_in_range = date_in_range
 _committed_items = committed_items
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _reached_qa(d: DeliverableRow, qa_canonical: str) -> bool:
-    return any(e.canonical_status == qa_canonical for e in d.status_timeline)
-
-
-def _has_rework_tags(d: DeliverableRow, rework_tags: list[str]) -> bool:
-    return any(t in rework_tags for t in d.tags)
+_reached_qa = reached_qa
+_has_rework_tags = has_rework_tags
 
 
 def _rag_lower_is_better(value: float, config: ReworkRateConfig) -> RAGStatus:

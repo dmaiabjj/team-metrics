@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, TrendingDown, Minus, BarChart3, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, BarChart3, Clock, Scale } from 'lucide-react';
 import { usePerformanceComparison, useHistoricalTrend } from '../api/hooks/usePerformanceAnalysis';
 import { TEAMS, TEAM_LABELS, TEAM_COLORS, KPI_META, ALL_KPI_KEYS, KPI_KEYS, DORA_KEYS, KPI_SLUG } from '../lib/constants';
 import { fmt, fmtDate, ragColor, valFromKpis, ragFromKpis } from '../lib/formatters';
@@ -16,7 +16,21 @@ const CARD = {
   borderRadius: 18, boxShadow: 'var(--shadow-sm)',
 };
 
-// ─── COMPARISON MODE ──────────────────────────────────────────────────────────
+// ─── RANKING HELPERS ────────────────────────────────────────────────────────
+
+function rankTeams(teams, kpiKey) {
+  const meta = KPI_META[kpiKey];
+  const ranked = teams
+    .map(t => {
+      const kpi = t.kpis.find(k => k.kpiKey === kpiKey);
+      return { teamId: t.teamId, value: kpi?.currVal, rag: kpi?.currRag, delta: kpi?.delta, improved: kpi?.improved };
+    })
+    .filter(t => t.value != null)
+    .sort((a, b) => meta?.lower_better ? a.value - b.value : b.value - a.value);
+  return ranked;
+}
+
+// ─── COMPARISON MODE ────────────────────────────────────────────────────────
 
 const INTERVALS = [
   { id: 'weekly', label: 'Weekly' },
@@ -90,7 +104,7 @@ function ComparisonMode() {
         </div>
       )}
 
-      {isLoading && <Loader message="Loading comparison data…" />}
+      {isLoading && <Loader message="Loading cross-team comparison…" />}
       {error && <ErrorBox message={error.message} />}
 
       {mergedData && !isLoading && (
@@ -111,156 +125,180 @@ function ComparisonMode() {
                 <span style={{ fontSize: 12, fontWeight: 600, color }}>{label}</span>
               </div>
             ))}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: '#ede9fe', border: '1px solid #8b5cf630', borderRadius: 14, padding: '10px 18px',
+            }}>
+              <Scale size={16} strokeWidth={2.5} style={{ color: '#8b5cf6' }} />
+              <span style={{ fontSize: 20, fontWeight: 900, color: '#8b5cf6' }}>{mergedData.teams.length}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#8b5cf6' }}>Teams</span>
+            </div>
           </div>
 
-          {/* KPI Trend Grid */}
-          <Divider label="KPI Trends" />
-          <div className="responsive-grid-3" style={{ gap: 14, marginBottom: 8 }}>
-            {mergedData.averages.filter(a => KPI_KEYS.includes(a.kpiKey)).map(({ kpiKey, currVal, prevVal, currRag, delta, improved }) => {
-              const meta = KPI_META[kpiKey];
+          {/* Team KPI Rankings — one row per team */}
+          <Divider label="Team KPI Rankings" icon={<Scale size={15} strokeWidth={2} />} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
+            {mergedData.teams.map(({ teamId, kpis }) => {
+              const teamColor = TEAM_COLORS[teamId];
               return (
-                <div key={kpiKey} style={{ ...CARD, padding: '16px 18px', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: ragColor(currRag) }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
-                      <span style={{ marginRight: 5 }}>{meta?.icon}</span>{meta?.label}
-                    </div>
-                    <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />
+                <div key={teamId} style={{ ...CARD, padding: '14px 18px', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 3, background: teamColor, borderRadius: '2px 0 0 2px' }} />
+                  {/* Team name */}
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 160px', paddingLeft: 4, cursor: 'pointer', transition: 'opacity 0.15s' }}
+                    onClick={() => navigate(`/teams/${teamId}`)}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                  >
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: teamColor, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>{TEAM_LABELS[teamId]}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ fontSize: 26, fontWeight: 900, color: ragColor(currRag), fontFamily: 'var(--font-mono)', lineHeight: 1 }}>
-                      {fmt(kpiKey, currVal)}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-                      was {fmt(kpiKey, prevVal)}
-                    </span>
+                  {/* All KPI + DORA metrics in a single row */}
+                  <div style={{ display: 'flex', gap: 6, flex: 1, flexWrap: 'wrap' }}>
+                    {kpis.filter(k => KPI_KEYS.includes(k.kpiKey)).map(({ kpiKey, currVal, currRag, delta, improved }) => {
+                      const meta = KPI_META[kpiKey];
+                      return (
+                        <div key={kpiKey} style={{
+                          flex: '1 1 0', minWidth: 80, padding: '5px 8px',
+                          background: 'var(--surface2)', borderRadius: 8, textAlign: 'center',
+                          cursor: 'pointer', transition: 'all 0.15s',
+                        }}
+                          onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
+                          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'none'; }}
+                        >
+                          <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
+                            {meta?.icon} {meta?.label}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: ragColor(currRag), fontFamily: 'var(--font-mono)' }}>
+                            {fmt(kpiKey, currVal)}
+                          </div>
+                          <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />
+                        </div>
+                      );
+                    })}
+                    {kpis.filter(k => DORA_KEYS.includes(k.kpiKey)).map(({ kpiKey, currVal, currRag, delta, improved }) => {
+                      const meta = KPI_META[kpiKey];
+                      return (
+                        <div key={kpiKey} style={{
+                          flex: '1 1 0', minWidth: 80, padding: '5px 8px',
+                          background: 'var(--surface2)', borderRadius: 8, textAlign: 'center',
+                          cursor: 'pointer', transition: 'all 0.15s',
+                        }}
+                          onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
+                          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'none'; }}
+                        >
+                          <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
+                            {meta?.icon} {meta?.label}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: ragColor(currRag), fontFamily: 'var(--font-mono)' }}>
+                            {fmt(kpiKey, currVal)}
+                          </div>
+                          <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* DORA Metrics Grid */}
-          <Divider label="DORA Metrics" icon={<TrendingUp size={15} strokeWidth={2} />} />
-          <div className="responsive-grid-2" style={{ gap: 14, marginBottom: 8 }}>
-            {mergedData.averages.filter(a => DORA_KEYS.includes(a.kpiKey)).map(({ kpiKey, currVal, prevVal, currRag, delta, improved }) => {
+          {/* KPI Leaderboard — same row layout as Team KPI Rankings */}
+          <Divider label="KPI Leaderboard" icon={<Scale size={15} strokeWidth={2} />} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
+            {KPI_KEYS.map(kpiKey => {
               const meta = KPI_META[kpiKey];
+              const ranked = rankTeams(mergedData.teams, kpiKey);
               return (
-                <div key={kpiKey} style={{ ...CARD, padding: '16px 18px', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: ragColor(currRag) }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
-                      <span style={{ marginRight: 5 }}>{meta?.icon}</span>{meta?.label}
-                    </div>
-                    <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />
+                <div key={kpiKey} style={{ ...CARD, padding: '14px 18px', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 3, background: 'var(--accent)', borderRadius: '2px 0 0 2px' }} />
+                  {/* KPI label */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 220px', paddingLeft: 4 }}>
+                    <span style={{ fontSize: 14 }}>{meta?.icon}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>{meta?.label}</span>
+                    <span style={{ fontSize: 9, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{meta?.lower_better ? '(lower)' : '(higher)'}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ fontSize: 26, fontWeight: 900, color: ragColor(currRag), fontFamily: 'var(--font-mono)', lineHeight: 1 }}>
-                      {fmt(kpiKey, currVal)}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-                      was {fmt(kpiKey, prevVal)}
-                    </span>
+                  {/* Ranked teams as pills */}
+                  <div style={{ display: 'flex', gap: 6, flex: 1, flexWrap: 'wrap' }}>
+                    {ranked.map((t, idx) => {
+                      const rankColor = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#cd7f32' : 'var(--muted)';
+                      return (
+                        <div key={t.teamId} style={{
+                          flex: '1 1 0', minWidth: 100, padding: '5px 8px',
+                          background: 'var(--surface2)', borderRadius: 8, textAlign: 'center',
+                          border: idx === 0 ? '1px solid #f59e0b30' : '1px solid transparent',
+                          cursor: 'pointer', transition: 'all 0.15s',
+                        }}
+                          onClick={() => navigate(`/teams/${t.teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
+                          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'none'; }}
+                        >
+                          <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <span style={{ fontWeight: 900, color: rankColor }}>#{idx + 1}</span>
+                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: TEAM_COLORS[t.teamId] }} />
+                            {TEAM_LABELS[t.teamId]}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: ragColor(t.rag), fontFamily: 'var(--font-mono)' }}>
+                            {fmt(kpiKey, t.value)}
+                          </div>
+                          <TrendArrow improved={t.improved} delta={t.delta} metricKey={kpiKey} formatter={fmt} />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Team KPI Comparison Table */}
-          <Divider label="Team KPI Comparison" />
-          <div className="tbl-scroll-wrap" style={{ ...CARD, overflow: 'auto', marginBottom: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>Team</th>
-                  {KPI_KEYS.map(k => (
-                    <th key={k} style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--muted)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
-                      {KPI_META[k]?.icon} {KPI_META[k]?.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {mergedData.teams.map(({ teamId, kpis }) => (
-                  <tr key={teamId} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td
-                      style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, cursor: 'pointer', transition: 'background 0.15s' }}
-                      onClick={() => navigate(`/teams/${teamId}`)}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'var(--surface)'}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: TEAM_COLORS[teamId], flexShrink: 0 }} />
-                        {TEAM_LABELS[teamId]}
-                      </div>
-                    </td>
-                    {kpis.filter(k => KPI_KEYS.includes(k.kpiKey)).map(({ kpiKey, currVal, currRag, delta, improved }) => (
-                      <td
-                        key={kpiKey}
-                        style={{ padding: '8px', textAlign: 'center', cursor: 'pointer', transition: 'background 0.15s', borderRadius: 6 }}
-                        onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-                        onMouseLeave={e => e.currentTarget.style.background = ''}
-                      >
-                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: ragColor(currRag) }}>
-                          {fmt(kpiKey, currVal)}
+          {/* DORA Leaderboard — same row layout */}
+          <Divider label="DORA Leaderboard" icon={<TrendingUp size={15} strokeWidth={2} />} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 8 }}>
+            {DORA_KEYS.map(kpiKey => {
+              const meta = KPI_META[kpiKey];
+              const ranked = rankTeams(mergedData.teams, kpiKey);
+              return (
+                <div key={kpiKey} style={{ ...CARD, padding: '14px 18px', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 3, background: 'var(--accent)', borderRadius: '2px 0 0 2px' }} />
+                  {/* DORA label */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 220px', paddingLeft: 4 }}>
+                    <span style={{ fontSize: 14 }}>{meta?.icon}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>{meta?.label}</span>
+                    <span style={{ fontSize: 9, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{meta?.lower_better ? '(lower)' : '(higher)'}</span>
+                  </div>
+                  {/* Ranked teams as pills */}
+                  <div style={{ display: 'flex', gap: 6, flex: 1, flexWrap: 'wrap' }}>
+                    {ranked.map((t, idx) => {
+                      const rankColor = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#cd7f32' : 'var(--muted)';
+                      return (
+                        <div key={t.teamId} style={{
+                          flex: '1 1 0', minWidth: 100, padding: '5px 8px',
+                          background: 'var(--surface2)', borderRadius: 8, textAlign: 'center',
+                          border: idx === 0 ? '1px solid #f59e0b30' : '1px solid transparent',
+                          cursor: 'pointer', transition: 'all 0.15s',
+                        }}
+                          onClick={() => navigate(`/teams/${t.teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
+                          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = 'none'; }}
+                        >
+                          <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                            <span style={{ fontWeight: 900, color: rankColor }}>#{idx + 1}</span>
+                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: TEAM_COLORS[t.teamId] }} />
+                            {TEAM_LABELS[t.teamId]}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: ragColor(t.rag), fontFamily: 'var(--font-mono)' }}>
+                            {fmt(kpiKey, t.value)}
+                          </div>
+                          <TrendArrow improved={t.improved} delta={t.delta} metricKey={kpiKey} formatter={fmt} />
                         </div>
-                        <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Team DORA Comparison Table */}
-          <Divider label="Team DORA Comparison" icon={<TrendingUp size={15} strokeWidth={2} />} />
-          <div className="tbl-scroll-wrap" style={{ ...CARD, overflow: 'auto', marginBottom: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>Team</th>
-                  {DORA_KEYS.map(k => (
-                    <th key={k} style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--muted)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
-                      {KPI_META[k]?.icon} {KPI_META[k]?.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {mergedData.teams.map(({ teamId, kpis }) => (
-                  <tr key={teamId} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td
-                      style={{ padding: '10px 14px', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, cursor: 'pointer', transition: 'background 0.15s' }}
-                      onClick={() => navigate(`/teams/${teamId}`)}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'var(--surface)'}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: TEAM_COLORS[teamId], flexShrink: 0 }} />
-                        {TEAM_LABELS[teamId]}
-                      </div>
-                    </td>
-                    {kpis.filter(k => DORA_KEYS.includes(k.kpiKey)).map(({ kpiKey, currVal, currRag, delta, improved }) => (
-                      <td
-                        key={kpiKey}
-                        style={{ padding: '8px', textAlign: 'center', cursor: 'pointer', transition: 'background 0.15s', borderRadius: 6 }}
-                        onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-                        onMouseLeave={e => e.currentTarget.style.background = ''}
-                      >
-                        <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: ragColor(currRag) }}>
-                          {fmt(kpiKey, currVal)}
-                        </div>
-                        <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* KPI Bar Chart */}
@@ -273,7 +311,7 @@ function ComparisonMode() {
                 onChange={setChartKpi}
               />
             </div>
-            <div role="img" aria-label="KPI comparison bar chart">
+            <div role="img" aria-label="Cross-team KPI comparison bar chart">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={mergedData.teams.map(t => {
                   const activeKpi = KPI_KEYS.includes(chartKpi) ? chartKpi : KPI_KEYS[0];
@@ -304,7 +342,7 @@ function ComparisonMode() {
                 onChange={setDoraChartKpi}
               />
             </div>
-            <div role="img" aria-label="DORA metrics comparison bar chart">
+            <div role="img" aria-label="Cross-team DORA comparison bar chart">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={mergedData.teams.map(t => {
                   const activeKpi = DORA_KEYS.includes(doraChartKpi) ? doraChartKpi : DORA_KEYS[0];
@@ -330,7 +368,7 @@ function ComparisonMode() {
   );
 }
 
-// ─── HISTORICAL TREND MODE ────────────────────────────────────────────────────
+// ─── HISTORICAL TREND MODE ──────────────────────────────────────────────────
 
 const GRANULARITIES = [
   { id: 'monthly', label: 'Monthly' },
@@ -360,11 +398,30 @@ function HistoricalTrendMode() {
         </div>
       </div>
 
-      {isLoading && <Loader message="Loading historical data…" />}
+      {isLoading && <Loader message="Loading cross-team historical data…" />}
       {error && <ErrorBox message={error.message} />}
 
       {timeSeriesData && !isLoading && (
         <>
+          {/* Team legend */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            {TEAMS.map(teamId => (
+              <div key={teamId} style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', borderRadius: 10,
+                background: 'var(--surface2)', border: '1px solid var(--border)',
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+                onClick={() => navigate(`/teams/${teamId}`)}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = TEAM_COLORS[teamId]; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: TEAM_COLORS[teamId] }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{TEAM_LABELS[teamId]}</span>
+              </div>
+            ))}
+          </div>
+
           {/* KPI Trend Chart */}
           <Divider label="KPI Trends" icon={<TrendingUp size={15} strokeWidth={2} />} />
           <div style={{ ...CARD, padding: '20px', marginBottom: 8 }}>
@@ -375,7 +432,7 @@ function HistoricalTrendMode() {
                 onChange={setChartKpi}
               />
             </div>
-            <div role="img" aria-label="KPI historical trends line chart">
+            <div role="img" aria-label="Cross-team KPI trends line chart">
               <ResponsiveContainer width="100%" height={340}>
                 <LineChart data={timeSeriesData.chartData[KPI_KEYS.includes(chartKpi) ? chartKpi : KPI_KEYS[0]] || []}>
                   <XAxis dataKey="period" tick={{ fontSize: 12, fill: 'var(--muted)', fontWeight: 600 }} />
@@ -386,16 +443,9 @@ function HistoricalTrendMode() {
                   />
                   <Legend />
                   {TEAMS.map(teamId => (
-                    <Line
-                      key={teamId}
-                      type="monotone"
-                      dataKey={teamId}
-                      name={TEAM_LABELS[teamId]}
-                      stroke={TEAM_COLORS[teamId]}
-                      strokeWidth={2.5}
-                      dot={{ r: 4, fill: TEAM_COLORS[teamId] }}
-                      activeDot={{ r: 6 }}
-                    />
+                    <Line key={teamId} type="monotone" dataKey={teamId} name={TEAM_LABELS[teamId]}
+                      stroke={TEAM_COLORS[teamId]} strokeWidth={2.5}
+                      dot={{ r: 4, fill: TEAM_COLORS[teamId] }} activeDot={{ r: 6 }} />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
@@ -412,7 +462,7 @@ function HistoricalTrendMode() {
                 onChange={setDoraChartKpi}
               />
             </div>
-            <div role="img" aria-label="DORA historical trends line chart">
+            <div role="img" aria-label="Cross-team DORA trends line chart">
               <ResponsiveContainer width="100%" height={340}>
                 <LineChart data={timeSeriesData.chartData[DORA_KEYS.includes(doraChartKpi) ? doraChartKpi : DORA_KEYS[0]] || []}>
                   <XAxis dataKey="period" tick={{ fontSize: 12, fill: 'var(--muted)', fontWeight: 600 }} />
@@ -423,16 +473,9 @@ function HistoricalTrendMode() {
                   />
                   <Legend />
                   {TEAMS.map(teamId => (
-                    <Line
-                      key={teamId}
-                      type="monotone"
-                      dataKey={teamId}
-                      name={TEAM_LABELS[teamId]}
-                      stroke={TEAM_COLORS[teamId]}
-                      strokeWidth={2.5}
-                      dot={{ r: 4, fill: TEAM_COLORS[teamId] }}
-                      activeDot={{ r: 6 }}
-                    />
+                    <Line key={teamId} type="monotone" dataKey={teamId} name={TEAM_LABELS[teamId]}
+                      stroke={TEAM_COLORS[teamId]} strokeWidth={2.5}
+                      dot={{ r: 4, fill: TEAM_COLORS[teamId] }} activeDot={{ r: 6 }} />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
@@ -467,11 +510,10 @@ function HistoricalTrendMode() {
                     <tbody>
                       {timeSeriesData.teamsData.map(({ teamId, kpiSeries }) => {
                         const series = kpiSeries[kpiKey] || [];
-                        const byPeriod = Object.fromEntries(series.map(e => [e.period, e]));
                         return (
                           <tr key={teamId} style={{ borderBottom: '1px solid var(--border)' }}>
                             <td
-                              style={{ padding: '8px 14px', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, cursor: 'pointer', transition: 'background 0.15s' }}
+                              style={{ width: 140, padding: '8px 14px', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, cursor: 'pointer', transition: 'background 0.15s' }}
                               onClick={() => navigate(`/teams/${teamId}`)}
                               onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                               onMouseLeave={e => e.currentTarget.style.background = 'var(--surface)'}
@@ -481,23 +523,21 @@ function HistoricalTrendMode() {
                                 {TEAM_LABELS[teamId]}
                               </div>
                             </td>
-                            {periods.map((p, i) => {
-                              const entry = byPeriod[p.label];
-                              const prevPeriod = i > 0 ? byPeriod[periods[i - 1].label] : null;
-                              const delta = (entry?.value != null && prevPeriod?.value != null)
-                                ? entry.value - prevPeriod.value : null;
+                            {series.map((entry, i) => {
+                              const prevEntry = i > 0 ? series[i - 1] : null;
+                              const delta = (entry.value != null && prevEntry?.value != null) ? entry.value - prevEntry.value : null;
                               const improved = delta != null && delta !== 0
                                 ? (meta?.lower_better ? delta < 0 : delta > 0) : null;
                               return (
                                 <td
-                                  key={p.label}
+                                  key={entry.period}
                                   style={{ padding: '6px 10px', textAlign: 'center', cursor: 'pointer', transition: 'background 0.15s' }}
                                   onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
                                   onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                                   onMouseLeave={e => e.currentTarget.style.background = ''}
                                 >
-                                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: ragColor(entry?.rag) }}>
-                                    {fmt(kpiKey, entry?.value ?? null)}
+                                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: ragColor(entry.rag) }}>
+                                    {fmt(kpiKey, entry.value)}
                                   </div>
                                   {i > 0 && <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />}
                                 </td>
@@ -541,11 +581,10 @@ function HistoricalTrendMode() {
                     <tbody>
                       {timeSeriesData.teamsData.map(({ teamId, kpiSeries }) => {
                         const series = kpiSeries[kpiKey] || [];
-                        const byPeriod = Object.fromEntries(series.map(e => [e.period, e]));
                         return (
                           <tr key={teamId} style={{ borderBottom: '1px solid var(--border)' }}>
                             <td
-                              style={{ padding: '8px 14px', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, cursor: 'pointer', transition: 'background 0.15s' }}
+                              style={{ width: 140, padding: '8px 14px', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, cursor: 'pointer', transition: 'background 0.15s' }}
                               onClick={() => navigate(`/teams/${teamId}`)}
                               onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                               onMouseLeave={e => e.currentTarget.style.background = 'var(--surface)'}
@@ -555,23 +594,21 @@ function HistoricalTrendMode() {
                                 {TEAM_LABELS[teamId]}
                               </div>
                             </td>
-                            {periods.map((p, i) => {
-                              const entry = byPeriod[p.label];
-                              const prevPeriod = i > 0 ? byPeriod[periods[i - 1].label] : null;
-                              const delta = (entry?.value != null && prevPeriod?.value != null)
-                                ? entry.value - prevPeriod.value : null;
+                            {series.map((entry, i) => {
+                              const prevEntry = i > 0 ? series[i - 1] : null;
+                              const delta = (entry.value != null && prevEntry?.value != null) ? entry.value - prevEntry.value : null;
                               const improved = delta != null && delta !== 0
                                 ? (meta?.lower_better ? delta < 0 : delta > 0) : null;
                               return (
                                 <td
-                                  key={p.label}
+                                  key={entry.period}
                                   style={{ padding: '6px 10px', textAlign: 'center', cursor: 'pointer', transition: 'background 0.15s' }}
                                   onClick={() => navigate(`/teams/${teamId}/kpis/${KPI_SLUG[kpiKey]}`)}
                                   onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                                   onMouseLeave={e => e.currentTarget.style.background = ''}
                                 >
-                                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: ragColor(entry?.rag) }}>
-                                    {fmt(kpiKey, entry?.value ?? null)}
+                                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: ragColor(entry.rag) }}>
+                                    {fmt(kpiKey, entry.value)}
                                   </div>
                                   {i > 0 && <TrendArrow improved={improved} delta={delta} metricKey={kpiKey} formatter={fmt} />}
                                 </td>
@@ -592,23 +629,20 @@ function HistoricalTrendMode() {
   );
 }
 
-// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+// ─── MAIN PAGE ──────────────────────────────────────────────────────────────
 
-export default function PerformanceAnalysisPage() {
+export default function CrossPerformancePage() {
   const [mode, setMode] = useState('comparison');
 
   return (
     <div className="page" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Header */}
-      <Breadcrumb items={[{ label: 'Overview', to: '/' }, { label: 'Performance Analysis' }]} />
+      <Breadcrumb items={[{ label: 'Overview', to: '/' }, { label: 'Cross Performance' }]} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)', letterSpacing: '-0.02em' }}>Performance Analysis</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Compare team metrics across periods and track trends</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)', letterSpacing: '-0.02em' }}>Cross-Team Performance</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Compare KPIs and DORA metrics across all teams with rankings</div>
         </div>
-
-        {/* Mode tabs */}
         <div style={{ display: 'flex', gap: 4, background: 'var(--surface2)', borderRadius: 14, padding: 4 }}>
           <ModeTab active={mode === 'comparison'} label="Comparison" icon={<BarChart3 size={14} />} onClick={() => setMode('comparison')} />
           <ModeTab active={mode === 'historical'} label="Historical Trend" icon={<TrendingUp size={14} />} onClick={() => setMode('historical')} />

@@ -8,6 +8,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 import Breadcrumb from '../components/shared/Breadcrumb';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
+import FlagPill from '../components/shared/FlagPill';
 import DeveloperSummary from '../components/shared/DeveloperSummary';
 
 const FLAG_TABS = [
@@ -110,6 +111,7 @@ export default function WorkItemsPage() {
           <input
             type="text"
             placeholder="Search ID, title, developer…"
+            aria-label="Search work items"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ ...inputStyle, width: '100%', paddingLeft: 30 }}
@@ -119,14 +121,14 @@ export default function WorkItemsPage() {
 
         {/* Status dropdown */}
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ ...inputStyle, cursor: 'pointer' }}>
+          aria-label="Filter by status" style={{ ...inputStyle, cursor: 'pointer' }}>
           <option value="">All Statuses</option>
           {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
 
         {/* Type dropdown */}
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
-          style={{ ...inputStyle, cursor: 'pointer' }}>
+          aria-label="Filter by type" style={{ ...inputStyle, cursor: 'pointer' }}>
           <option value="">All Types</option>
           {types.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -350,13 +352,3 @@ function WorkItemRow({ wi, teamId, navigate, hideEpic }) {
   );
 }
 
-function FlagPill({ color, label }) {
-  return (
-    <span style={{
-      background: color + '18', color, fontSize: 9, fontWeight: 700,
-      padding: '2px 6px', borderRadius: 99, lineHeight: 1.2, whiteSpace: 'nowrap',
-    }}>
-      {label}
-    </span>
-  );
-}

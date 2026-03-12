@@ -217,7 +217,7 @@ def _apply_inclusion(
 
     state_at_start: str | None = None
     state_at_end: str | None = None
-    revisions_in_period: list[dict] = []
+    revisions_in_period: list[tuple[dict, str | None]] = []
     prev_state: str | None = None
 
     for rev in sorted_revs:
@@ -573,6 +573,113 @@ async def _collect_children(
 
 
 # ---------------------------------------------------------------------------
+# Shared deliverable enrichment
+# ---------------------------------------------------------------------------
+
+
+def _build_deliverable_row(
+    wi: dict,
+    sorted_revs: list[dict],
+    epic_ref: WorkItemRef | None,
+    feature_ref: WorkItemRef | None,
+    child_bugs: list[WorkItemRef],
+    child_tasks: list[WorkItemRef],
+    real_to_canonical: dict[str, str],
+    kpi_overrides,
+    start_date: date,
+    end_date: date,
+    start_dt: datetime,
+    end_dt: datetime,
+    delivered_canonical: str,
+    qa_canonical: str,
+    rework_tags: list[str],
+    team_project: str,
+) -> DeliverableRow | None:
+    """Build an enriched DeliverableRow from a raw work item and its revisions.
+
+    Returns None if the work item has no ID.
+    """
+    wid = wi.get("id")
+    if not wid:
+        return None
+
+    state = _work_item_state(wi)
+    canonical_status = real_to_canonical.get(state) or "Unknown"
+
+    developer, qa, release_manager = _compute_role_assignments(sorted_revs, real_to_canonical)
+    status_timeline = _compute_status_timeline(sorted_revs, real_to_canonical)
+    status_at_start, status_at_end = _compute_boundary_statuses(sorted_revs, start_dt, end_dt)
+    bounce_count, bounce_details = _compute_bounces(sorted_revs, real_to_canonical)
+    child_bug_ids = [b.id for b in child_bugs]
+    has_rework, is_spillover, tags = _compute_tags(
+        real_to_canonical, child_bug_ids, status_at_start, bounce_count,
+    )
+
+    parent_epic_id = epic_ref.id if epic_ref else None
+    is_technical_debt = (
+        parent_epic_id is not None and parent_epic_id in kpi_overrides.tech_debt_epic_ids
+    )
+    is_post_mortem = (
+        parent_epic_id is not None and parent_epic_id in kpi_overrides.post_mortem_epic_ids
+    )
+
+    lifecycle = _compute_lifecycle_dates(sorted_revs, real_to_canonical)
+
+    is_committed = is_spillover or date_in_range(lifecycle.start_date, start_date, end_date)
+    is_delivered = is_committed and (
+        (canonical_status or "").strip() == delivered_canonical
+    )
+    _reached_qa = any(
+        (e.canonical_status or "") == qa_canonical for e in status_timeline
+    )
+    is_rework_item = _reached_qa and any(t in rework_tags for t in tags)
+
+    post_mortem_sla_met: bool | None = None
+    if is_post_mortem and kpi_overrides.post_mortem_sla_weeks is not None:
+        if lifecycle.delivery_days is not None:
+            sla_days = kpi_overrides.post_mortem_sla_weeks * 7
+            post_mortem_sla_met = lifecycle.delivery_days <= sla_days
+        else:
+            post_mortem_sla_met = False
+
+    return DeliverableRow(
+        id=wid,
+        work_item_type=_work_item_type(wi),
+        title=_work_item_title(wi),
+        description=_work_item_description(wi),
+        state=state,
+        team_project=_work_item_team_project(wi) or team_project,
+        area_path=_work_item_area_path(wi),
+        canonical_status=canonical_status if canonical_status != "Unknown" else None,
+        date_created=lifecycle.date_created,
+        start_date=lifecycle.start_date,
+        finish_date=lifecycle.finish_date,
+        status_at_start=status_at_start,
+        status_at_end=status_at_end,
+        status_timeline=status_timeline,
+        parent_epic=epic_ref,
+        parent_feature=feature_ref,
+        child_bugs=child_bugs,
+        child_tasks=child_tasks,
+        developer=developer,
+        qa=qa,
+        release_manager=release_manager,
+        has_rework=has_rework,
+        is_spillover=is_spillover,
+        is_committed=is_committed,
+        is_delivered=is_delivered,
+        is_rework_item=is_rework_item,
+        bounces=bounce_count,
+        bounce_details=bounce_details,
+        is_technical_debt=is_technical_debt,
+        is_post_mortem=is_post_mortem,
+        post_mortem_sla_met=post_mortem_sla_met,
+        delivery_days=lifecycle.delivery_days,
+        tags=tags,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
 
@@ -698,87 +805,18 @@ async def run_report(
         wid = wi.get("id")
         if not wid:
             continue
-        state = _work_item_state(wi)
-        canonical_status = real_to_canonical.get(state) or "Unknown"
-
         epic_ref, feature_ref = parents_by_id.get(wid, (None, None))
         child_bugs, child_tasks = children_by_id.get(wid, ([], []))
-
-        # Compute enrichments from cached revisions
         revs = revisions_by_id.get(wid, [])
-        developer, qa, release_manager = _compute_role_assignments(revs, real_to_canonical)
-        status_timeline = _compute_status_timeline(revs, real_to_canonical)
-        status_at_start, status_at_end = _compute_boundary_statuses(revs, start_dt, end_dt)
-        bounce_count, bounce_details = _compute_bounces(revs, real_to_canonical)
-        child_bug_ids = [b.id for b in child_bugs]
-        has_rework, is_spillover, tags = _compute_tags(
-            real_to_canonical, child_bug_ids, status_at_start, bounce_count,
-        )
 
-        parent_epic_id = epic_ref.id if epic_ref else None
-        is_technical_debt = (
-            parent_epic_id is not None and parent_epic_id in kpi_overrides.tech_debt_epic_ids
+        row = _build_deliverable_row(
+            wi, revs, epic_ref, feature_ref, child_bugs, child_tasks,
+            real_to_canonical, kpi_overrides,
+            start_date, end_date, start_dt, end_dt,
+            delivered_canonical, qa_canonical, rework_tags, team.project,
         )
-        is_post_mortem = (
-            parent_epic_id is not None and parent_epic_id in kpi_overrides.post_mortem_epic_ids
-        )
-
-        lifecycle = _compute_lifecycle_dates(revs, real_to_canonical)
-
-        is_committed = is_spillover or date_in_range(lifecycle.start_date, start_date, end_date)
-        is_delivered = is_committed and (
-            (canonical_status or "").strip() == delivered_canonical
-        )
-        reached_qa = any(
-            (e.canonical_status or "") == qa_canonical for e in status_timeline
-        )
-        is_rework_item = reached_qa and any(t in rework_tags for t in tags)
-
-        post_mortem_sla_met: bool | None = None
-        if is_post_mortem and kpi_overrides.post_mortem_sla_weeks is not None:
-            if lifecycle.delivery_days is not None:
-                sla_days = kpi_overrides.post_mortem_sla_weeks * 7
-                post_mortem_sla_met = lifecycle.delivery_days <= sla_days
-            else:
-                post_mortem_sla_met = False
-
-        deliverables.append(
-            DeliverableRow(
-                id=wid,
-                work_item_type=_work_item_type(wi),
-                title=_work_item_title(wi),
-                description=_work_item_description(wi),
-                state=state,
-                team_project=_work_item_team_project(wi) or team.project,
-                area_path=_work_item_area_path(wi),
-                canonical_status=canonical_status if canonical_status != "Unknown" else None,
-                date_created=lifecycle.date_created,
-                start_date=lifecycle.start_date,
-                finish_date=lifecycle.finish_date,
-                status_at_start=status_at_start,
-                status_at_end=status_at_end,
-                status_timeline=status_timeline,
-                parent_epic=epic_ref,
-                parent_feature=feature_ref,
-                child_bugs=child_bugs,
-                child_tasks=child_tasks,
-                developer=developer,
-                qa=qa,
-                release_manager=release_manager,
-                has_rework=has_rework,
-                is_spillover=is_spillover,
-                is_committed=is_committed,
-                is_delivered=is_delivered,
-                is_rework_item=is_rework_item,
-                bounces=bounce_count,
-                bounce_details=bounce_details,
-                is_technical_debt=is_technical_debt,
-                is_post_mortem=is_post_mortem,
-                post_mortem_sla_met=post_mortem_sla_met,
-                delivery_days=lifecycle.delivery_days,
-                tags=tags,
-            )
-        )
+        if row:
+            deliverables.append(row)
 
     logger.info("Team %s: report complete with %d deliverables", team_id, len(deliverables))
 
@@ -840,83 +878,11 @@ async def fetch_single_work_item(
         client, team.project, wi, by_id, team, wi_cache
     )
 
-    wid = wi.get("id")
-    if not wid:
-        return None
-
-    state = _work_item_state(wi)
-    canonical_status = real_to_canonical.get(state) or "Unknown"
-
-    developer, qa, release_manager = _compute_role_assignments(sorted_revs, real_to_canonical)
-    status_timeline = _compute_status_timeline(sorted_revs, real_to_canonical)
-    status_at_start, status_at_end = _compute_boundary_statuses(sorted_revs, start_dt, end_dt)
-    bounce_count, bounce_details = _compute_bounces(sorted_revs, real_to_canonical)
-    child_bug_ids = [b.id for b in child_bugs]
-    has_rework, is_spillover, tags = _compute_tags(
-        real_to_canonical, child_bug_ids, status_at_start, bounce_count,
-    )
-
-    parent_epic_id = epic_ref.id if epic_ref else None
-    is_technical_debt = (
-        parent_epic_id is not None and parent_epic_id in kpi_overrides.tech_debt_epic_ids
-    )
-    is_post_mortem = (
-        parent_epic_id is not None and parent_epic_id in kpi_overrides.post_mortem_epic_ids
-    )
-
-    lifecycle = _compute_lifecycle_dates(sorted_revs, real_to_canonical)
-
-    is_committed = is_spillover or date_in_range(lifecycle.start_date, start_date, end_date)
-    is_delivered = is_committed and (
-        (canonical_status or "").strip() == delivered_canonical
-    )
-    reached_qa = any(
-        (e.canonical_status or "") == qa_canonical for e in status_timeline
-    )
-    is_rework_item = reached_qa and any(t in rework_tags for t in tags)
-
-    post_mortem_sla_met: bool | None = None
-    if is_post_mortem and kpi_overrides.post_mortem_sla_weeks is not None:
-        if lifecycle.delivery_days is not None:
-            sla_days = kpi_overrides.post_mortem_sla_weeks * 7
-            post_mortem_sla_met = lifecycle.delivery_days <= sla_days
-        else:
-            post_mortem_sla_met = False
-
-    return DeliverableRow(
-        id=wid,
-        work_item_type=_work_item_type(wi),
-        title=_work_item_title(wi),
-        description=_work_item_description(wi),
-        state=state,
-        team_project=_work_item_team_project(wi) or team.project,
-        area_path=_work_item_area_path(wi),
-        canonical_status=canonical_status if canonical_status != "Unknown" else None,
-        date_created=lifecycle.date_created,
-        start_date=lifecycle.start_date,
-        finish_date=lifecycle.finish_date,
-        status_at_start=status_at_start,
-        status_at_end=status_at_end,
-        status_timeline=status_timeline,
-        parent_epic=epic_ref,
-        parent_feature=feature_ref,
-        child_bugs=child_bugs,
-        child_tasks=child_tasks,
-        developer=developer,
-        qa=qa,
-        release_manager=release_manager,
-        has_rework=has_rework,
-        is_spillover=is_spillover,
-        is_committed=is_committed,
-        is_delivered=is_delivered,
-        is_rework_item=is_rework_item,
-        bounces=bounce_count,
-        bounce_details=bounce_details,
-        is_technical_debt=is_technical_debt,
-        is_post_mortem=is_post_mortem,
-        post_mortem_sla_met=post_mortem_sla_met,
-        delivery_days=lifecycle.delivery_days,
-        tags=tags,
+    return _build_deliverable_row(
+        wi, sorted_revs, epic_ref, feature_ref, child_bugs, child_tasks,
+        real_to_canonical, kpi_overrides,
+        start_date, end_date, start_dt, end_dt,
+        delivered_canonical, qa_canonical, rework_tags, team.project,
     )
 
 
@@ -960,11 +926,10 @@ async def search_work_items(
     if not candidate_ids:
         return []
 
-    results: list[DeliverableRow] = []
-    for wid in candidate_ids[:limit]:
-        item = await fetch_single_work_item(
-            team_id, wid, start_date, end_date, client, teams, wi_cache
-        )
-        if item:
-            results.append(item)
-    return results
+    rows = await asyncio.gather(
+        *[
+            fetch_single_work_item(team_id, wid, start_date, end_date, client, teams, wi_cache)
+            for wid in candidate_ids[:limit]
+        ]
+    )
+    return [r for r in rows if r is not None]

@@ -14,6 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from app.adapters.azure_devops import AzureDevOpsClient
 from app.api.cache import router as cache_router
 from app.api.dashboard import router as dashboard_router
+from app.api.dora import router as dora_router
 from app.api.teams import router as teams_router
 from app.cache import AzureResponseCache, DeploymentCache, ReportCache, WorkItemCache
 from app.exceptions import (
@@ -144,6 +145,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 app.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(teams_router, prefix="/teams", tags=["teams"])
+app.include_router(dora_router, prefix="/teams", tags=["dora"])
 app.include_router(cache_router, prefix="/cache", tags=["cache"])
 
 

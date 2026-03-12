@@ -9,6 +9,7 @@ import StatusBadge from '../components/shared/StatusBadge';
 import Breadcrumb from '../components/shared/Breadcrumb';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
+import FlagPill from '../components/shared/FlagPill';
 
 const card = {
   background: 'var(--surface)', border: '1px solid var(--border)',
@@ -27,7 +28,7 @@ export default function WorkItemDetailPage() {
   const { data: wi, isLoading, error } = useWorkItem(teamId, itemId, periodStart, periodEnd);
 
   return (
-    <div style={{ padding: 32 }} className="animate-fade-in">
+    <div className="page animate-fade-in">
       <Breadcrumb items={[
         { label: 'Overview', to: '/' },
         { label: TEAM_LABELS[teamId] || teamId, to: `/teams/${teamId}` },
@@ -45,7 +46,7 @@ export default function WorkItemDetailPage() {
       )}
 
       {wi && !isLoading && (
-        <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="responsive-two-col">
           {/* ── LEFT COLUMN: Main Content ──────────────────────────── */}
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Header card */}
@@ -281,7 +282,7 @@ export default function WorkItemDetailPage() {
           </div>
 
           {/* ── RIGHT COLUMN: Sidebar ──────────────────────────────── */}
-          <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ flexBasis: 280, flexShrink: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* People */}
             <div style={card}>
               <div style={sectionLabel}>People</div>
@@ -368,17 +369,6 @@ function cycleTimeDays(start, end) {
 }
 
 /* ── Sub-components ──────────────────────────────────────────────────── */
-
-function FlagPill({ color, label }) {
-  return (
-    <span style={{
-      background: color + '18', color, fontSize: 9, fontWeight: 700,
-      padding: '2px 8px', borderRadius: 99,
-    }}>
-      {label}
-    </span>
-  );
-}
 
 function PersonRow({ label, name }) {
   return (
@@ -484,7 +474,10 @@ function ChildItemRow({ icon, item, onClick }) {
       background: 'var(--surface2)', borderRadius: 10, padding: '10px 14px',
       cursor: 'pointer', transition: 'background .15s',
     }}
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       onMouseEnter={e => e.currentTarget.style.background = 'var(--surface3)'}
       onMouseLeave={e => e.currentTarget.style.background = 'var(--surface2)'}
     >

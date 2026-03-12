@@ -6,6 +6,7 @@ import { TEAMS, TEAM_LABELS, TEAM_COLORS, TEAM_ICONS, KPI_KEYS, DORA_KEYS, KPI_M
 import { fmt, fmtDate, kpiColor, kpiStatus, doraLevel, valFromKpis, ragFromKpis, ragToStatus, ragColor } from '../lib/formatters';
 import Loader from '../components/shared/Loader';
 import ErrorBox from '../components/shared/ErrorBox';
+import { Divider } from '../components/analysis/AnalysisComponents';
 
 export default function OverviewPage() {
   const { periodStart, periodEnd } = usePeriod();
@@ -30,15 +31,6 @@ export default function OverviewPage() {
   const fleetScore = totalKPIs > 0 ? Math.round((fleetGood / totalKPIs) * 100) : null;
   const fleetColor = fleetScore == null ? '#94a3b8' : fleetScore >= 70 ? '#10b981' : fleetScore >= 45 ? '#f59e0b' : '#ef4444';
 
-  const Divider = ({ label, icon }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '28px 0 16px' }}>
-      <div style={{ width: 3, height: 18, background: 'var(--accent)', borderRadius: 2, flexShrink: 0 }} />
-      {icon && <span style={{ display: 'flex', alignItems: 'center' }}>{icon}</span>}
-      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{label}</span>
-      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-    </div>
-  );
-
   return (
     <div className="page" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {isLoading && <Loader />}
@@ -47,7 +39,7 @@ export default function OverviewPage() {
       {data && !isLoading && (<>
 
         {/* ── FLEET HEALTH BANNER ── */}
-        <div style={{
+        <div className="responsive-flex-row" style={{
           display: 'grid', gridTemplateColumns: '1fr auto', gap: 20,
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 20, padding: '24px 28px', marginBottom: 4,
@@ -109,7 +101,7 @@ export default function OverviewPage() {
 
         {/* ── DORA FLEET OVERVIEW ── */}
         <Divider label="DORA Fleet Overview" icon={<Activity size={16} strokeWidth={2} />} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 4 }}>
+        <div className="responsive-grid-2" style={{ marginBottom: 4 }}>
           {DORA_KEYS.map(k => {
             const avgVal = avgKpis[k];
             const avgLv = doraLevel(k, avgVal);
@@ -200,7 +192,7 @@ export default function OverviewPage() {
                 {/* Colored left accent */}
                 <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 4, background: `linear-gradient(180deg, ${color}, ${color}70)`, borderRadius: '18px 0 0 18px' }} />
 
-                <div style={{ padding: '18px 22px 18px 26px', display: 'grid', gridTemplateColumns: 'minmax(160px, 200px) 1fr auto', gap: 20, alignItems: 'center' }}>
+                <div className="responsive-flex-row" style={{ padding: '18px 22px 18px 26px', display: 'grid', gridTemplateColumns: 'minmax(160px, 200px) 1fr auto', gap: 20, alignItems: 'center' }}>
 
                   {/* ── Left: identity + health ring ── */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

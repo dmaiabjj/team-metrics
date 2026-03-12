@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocation, useParams, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { usePeriod } from '../../context/PeriodContext';
-import { TEAM_LABELS, TEAM_COLORS, KPI_META, SLUG_TO_KPI } from '../../lib/constants';
+import { TEAM_COLORS } from '../../lib/constants';
 import { api } from '../../api/client';
 import StatusBadge from '../shared/StatusBadge';
+import { Menu } from 'lucide-react';
+import { usePageMeta } from '../../hooks/usePageMeta';
 
-export default function Topbar() {
+export default function Topbar({ onMenuToggle, isMobile = false }) {
   const { periodStart, periodEnd, setPeriod } = usePeriod();
   const [pendingStart, setPendingStart] = useState(periodStart);
   const [pendingEnd, setPendingEnd] = useState(periodEnd);
-  const location = useLocation();
-  const { teamId, kpiName, itemId } = useParams();
+  const { title: pageTitle, teamId } = usePageMeta();
   const navigate = useNavigate();
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -19,31 +20,16 @@ export default function Topbar() {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchRef = useRef(null);
 
-  // Derive page title from URL
-  const pageTitle = (() => {
-    if (location.pathname === '/') return 'Overview';
-    if (location.pathname === '/performance') return 'Performance Analysis';
-    if (itemId) return `#${itemId}`;
-    if (location.pathname.includes('/work-items')) return 'Work Items';
-    if (location.pathname.includes('/dora')) return 'DORA Health';
-    if (kpiName) {
-      const kpiKey = SLUG_TO_KPI[kpiName];
-      return KPI_META[kpiKey]?.label || kpiName;
-    }
-    if (teamId) return TEAM_LABELS[teamId] || teamId;
-    return 'Dashboard';
-  })();
-
   const isTeamPage = !!teamId;
 
   // Search debounce
   useEffect(() => {
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) { setSearchResults([]); return; }
+    if (!teamId || !searchQuery.trim() || searchQuery.trim().length < 2) { setSearchResults([]); return; }
     const t = setTimeout(async () => {
       setSearchLoading(true);
       try {
         const q = searchQuery.trim();
-        const searchTeam = teamId || 'game-services';
+        const searchTeam = teamId;
         const resp = await api(`/teams/${searchTeam}/work-items?start_date=${periodStart}&end_date=${periodEnd}&page_size=200`);
         const items = resp?.items || [];
         const lower = q.toLowerCase();
@@ -75,14 +61,20 @@ export default function Topbar() {
   }, [searchOpen]);
 
   const openWorkItem = (id) => {
-    const t = teamId || 'game-services';
-    navigate(`/teams/${t}/work-items/${id}`);
+    navigate(`/teams/${teamId}/work-items/${id}`);
     setSearchOpen(false);
     setSearchQuery('');
   };
 
   return (
     <div className="topbar">
+      {/* Hamburger button (mobile only, shown via CSS) */}
+      {isMobile && (
+        <button className="topbar-hamburger" onClick={onMenuToggle} aria-label="Toggle menu">
+          <Menu size={20} strokeWidth={2} />
+        </button>
+      )}
+
       <div className="topbar-title">{pageTitle}</div>
       <div className="topbar-divider" />
 
@@ -95,8 +87,8 @@ export default function Topbar() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="topbar-search" onClick={() => setSearchOpen(true)} style={{ position: 'relative' }}>
+      {/* Search (only on team pages) */}
+      {isTeamPage && <div className="topbar-search" onClick={() => setSearchOpen(true)} style={{ position: 'relative' }}>
         <span style={{ fontSize: 13 }}>⌕</span>
         {searchOpen
           ? <input
@@ -104,6 +96,7 @@ export default function Topbar() {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search by ID or title…"
+              aria-label="Search work items"
               style={{ border: 'none', background: 'transparent', outline: 'none', font: 'inherit', color: 'var(--text)', width: '100%' }}
               onBlur={() => { setTimeout(() => { setSearchOpen(false); setSearchQuery(''); }, 200); }}
             />
@@ -125,13 +118,13 @@ export default function Topbar() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Period picker */}
       <div className="period-picker">
-        <input type="date" className="date-input" value={pendingStart} onChange={e => setPendingStart(e.target.value)} />
+        <input type="date" className="date-input" aria-label="Period start date" value={pendingStart} onChange={e => setPendingStart(e.target.value)} />
         <span className="period-label">→</span>
-        <input type="date" className="date-input" value={pendingEnd} onChange={e => setPendingEnd(e.target.value)} />
+        <input type="date" className="date-input" aria-label="Period end date" value={pendingEnd} onChange={e => setPendingEnd(e.target.value)} />
         <button className="btn" onClick={() => setPeriod(pendingStart, pendingEnd)}>Apply</button>
       </div>
 

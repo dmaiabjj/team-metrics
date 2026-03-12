@@ -222,13 +222,6 @@ async def fetch_all_reports(request: Request, start_date: date, end_date: date):
     return team_ids, results
 
 
-def get_report_cache(request: Request) -> "ReportCache | None":
-    """Typed accessor for report cache from app state."""
-    from app.cache import ReportCache
-    cache = getattr(request.app.state, "report_cache", None)
-    return cache if isinstance(cache, ReportCache) else None
-
-
 def get_wi_cache(request: Request) -> "WorkItemCache | None":
     """Typed accessor for work item cache from app state."""
     from app.cache import WorkItemCache

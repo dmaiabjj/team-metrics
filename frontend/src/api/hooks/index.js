@@ -7,3 +7,6 @@ export { useWorkItems } from './useWorkItems';
 export { useDoraMetrics, useDoraDetail } from './useDoraMetrics';
 export { useSnapshotDrilldown } from './useSnapshotDrilldown';
 export { usePerformanceComparison, useHistoricalTrend } from './usePerformanceAnalysis';
+export { useDeveloperComparison, useDeveloperHistorical } from './useDeveloperAnalysis';
+export { useCrossTeamComparison, useCrossTeamHistorical } from './useCrossTeamAnalysis';
+export { usePersonDetail } from './usePersonDetail';

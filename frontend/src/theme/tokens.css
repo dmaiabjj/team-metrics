@@ -23,6 +23,10 @@
   --bad-soft:#fee2e2;
   --color-dora-bg:#eef2ff;
   --color-dora-border:#c7d2fe;
+  --color-bug-border:#fca5a5;
+  --color-epic-accent:#a78bfa;
+  --color-feature-accent:#60a5fa;
+  --color-purple-accent:#8b5cf6;
   --sidebar:#1e1b2e;
   --sidebar-text:#9490b0;
   --sidebar-active:#ffffff;
@@ -533,9 +537,152 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-head);min-hei
 .parent-back-link{display:inline-flex;align-items:center;gap:6px;background:var(--bad-soft);border:1px solid #fca5a5;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;color:#dc2626;font-family:var(--font-mono);transition:all 0.13s;margin-bottom:16px;}
 .parent-back-link:hover{background:#fecaca;}
 
-/* ── RESPONSIVE ── */
+/* ── RESPONSIVE UTILITY CLASSES ── */
+.responsive-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.responsive-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+.responsive-flex-row{display:flex;gap:12px;flex-wrap:wrap;}
+.responsive-two-col{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;}
+.tbl-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.text-xs-label{font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+
+/* ── MOBILE OVERLAY ── */
+.sidebar-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.45);
+  z-index:99;opacity:0;pointer-events:none;
+  transition:opacity 0.3s ease;
+}
+.sidebar-overlay.visible{opacity:1;pointer-events:auto;}
+
+/* ── HAMBURGER BTN (hidden on desktop) ── */
+.topbar-hamburger{display:none;}
+
+/* ── RESPONSIVE (desktop) ── */
 @media(max-width:1100px){.dash-grid{grid-template-columns:1fr 1fr;} .dash-right{display:none;}}
 @media(max-width:900px){.grid-4{grid-template-columns:repeat(2,1fr);}.grid-3{grid-template-columns:repeat(2,1fr);}}
+
+/* ── TABLET (≤ 768px) ── */
+@media(max-width:768px){
+  /* Shell: sidebar becomes off-canvas drawer */
+  .sidebar{
+    position:fixed !important;top:0;left:0;bottom:0;
+    width:220px !important;
+    transform:translateX(-100%);
+    transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    z-index:100;
+    align-items:stretch !important;
+  }
+  .sidebar.mobile-open{transform:translateX(0);}
+  /* Always show labels in mobile drawer */
+  .sidebar.mobile-open .sidebar-brand{opacity:1;}
+  .sidebar.mobile-open .sidebar-section{opacity:1;height:auto;}
+  .sidebar.mobile-open .nav-icon-label{opacity:1;}
+  .sidebar.mobile-open .nav-icon{
+    padding:9px 14px;margin:0 8px;width:auto;height:auto;justify-content:flex-start;
+  }
+  .sidebar.mobile-open .nav-icon.active{border-left:3px solid rgba(255,255,255,0.8);padding-left:11px;}
+  .sidebar.mobile-open .sidebar-nav-wrap{align-items:stretch;}
+  .sidebar.mobile-open .sidebar-logo-wrap{padding:0 14px;}
+  .sidebar.mobile-open .sidebar-sep{margin:6px 14px;}
+  .sidebar.mobile-open .nav-dot-sm{position:static;margin-left:auto;}
+
+  /* Hide desktop collapse toggle on mobile */
+  .sidebar-toggle{display:none !important;}
+
+  /* Show hamburger */
+  .topbar-hamburger{
+    display:flex;align-items:center;justify-content:center;
+    width:40px;height:40px;border-radius:10px;border:none;
+    background:var(--surface2);cursor:pointer;color:var(--text);
+    font-size:18px;flex-shrink:0;transition:background 0.13s;
+  }
+  .topbar-hamburger:hover{background:var(--border);}
+
+  /* Topbar compact */
+  .topbar{padding:0 16px;gap:10px;}
+  .topbar-title{font-size:16px;}
+  .topbar-divider{display:none;}
+  .topbar-search{max-width:180px;}
+  .search-dropdown{min-width:280px;left:-40px;}
+
+  /* Page padding */
+  .page{padding:20px 16px;}
+
+  /* Grids → single column */
+  .dash-grid{grid-template-columns:1fr !important;}
+  .dash-right{display:block !important;}
+  .grid-4,.grid-3{grid-template-columns:1fr !important;}
+  .grid-2,.dora-grid{grid-template-columns:1fr !important;}
+  .responsive-grid-2{grid-template-columns:1fr !important;}
+  .responsive-grid-3{grid-template-columns:1fr !important;}
+  .wip-dev-grid{grid-template-columns:1fr !important;}
+
+  /* Flex layouts stack on mobile */
+  .stat-row{flex-direction:column;}
+  .stat-box{min-width:unset !important;}
+  .kpi-hero{flex-direction:column !important;gap:12px;}
+  .responsive-two-col{flex-direction:column !important;}
+  .responsive-two-col>*{width:100% !important;flex-shrink:1 !important;}
+  .responsive-flex-row{flex-direction:column !important;}
+
+  /* Filter bar */
+  .filter-bar{flex-direction:column;align-items:stretch;}
+  .filter-input{min-width:unset !important;width:100%;}
+
+  /* Touch targets (44px min) */
+  .nav-icon{min-height:44px;}
+  .btn{min-height:40px;padding:10px 16px;}
+  .topbar-icon-btn{width:40px;height:40px;}
+  .search-result{padding:12px 14px;min-height:44px;}
+  .date-input{min-height:40px;font-size:14px;padding:8px 10px;}
+  .bug-expand-btn{min-height:40px;padding:8px 10px;}
+
+  /* Typography: enforce readable sizes */
+  .text-xs-label{font-size:11px;}
+  .team-kpi-mini-label{font-size:10px !important;}
+  .hero-sub-label{font-size:11px;}
+  .breadcrumb{font-size:13px;}
+  .breadcrumb a{padding:4px 0;}
+
+  /* Team card touch targets */
+  .team-card{padding:16px;}
+  .kpi-chip{padding:14px 16px;min-height:44px;}
+
+  /* Period picker wrap */
+  .period-picker{flex-wrap:wrap;gap:6px;}
+}
+
+/* ── MOBILE (≤ 480px) ── */
+@media(max-width:480px){
+  .topbar-team-btn{display:none;}
+  .topbar-search{display:none;}
+  .topbar-title{font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .hero-value{font-size:28px !important;}
+  .kpi-hero-val{font-size:32px !important;}
+  .dora-metric-val{font-size:32px !important;}
+  .period-picker{width:100%;}
+  .date-input{flex:1;min-width:0;}
+  .page{padding:16px 12px;}
+}
+
+/* ── iOS SAFE AREA ── */
+@supports(padding:env(safe-area-inset-top)){
+  .topbar{padding-top:env(safe-area-inset-top);}
+  .sidebar{padding-bottom:env(safe-area-inset-bottom);}
+}
+
+/* ── FOCUS-VISIBLE (global accessibility) ── */
+*:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline-offset:0;}
+
+/* ── SKIP-TO-CONTENT LINK ── */
+.skip-to-content{
+  position:absolute;top:-100%;left:16px;
+  background:var(--accent);color:#fff;
+  padding:10px 20px;border-radius:0 0 10px 10px;
+  font-size:13px;font-weight:700;z-index:999;
+  text-decoration:none;transition:top 0.15s;
+}
+.skip-to-content:focus{top:0;}
 
 /* ── ANIMATIONS ── */
 @keyframes spin{to{transform:rotate(360deg);}}

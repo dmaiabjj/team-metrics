@@ -100,8 +100,7 @@ export default function TeamPage() {
   const { periodStart, periodEnd } = usePeriod();
 
   const { data, isLoading, error } = useTeamKpis(teamId, periodStart, periodEnd);
-  const { data: wiData, isLoading: wiLoading } = useWorkItems(teamId, periodStart, periodEnd, { limit: 6 });
-  const { data: allWiData } = useWorkItems(teamId, periodStart, periodEnd, { limit: 500 });
+  const { data: allWiData, isLoading: wiLoading } = useWorkItems(teamId, periodStart, periodEnd, { limit: 500 });
 
   const allKpis = [...(data?.kpis || []), ...(data?.dora || [])];
   const snap = data?.delivery_snapshot;
@@ -117,7 +116,7 @@ export default function TeamPage() {
   const circ = 2 * Math.PI * 22;
 
   return (
-    <div style={{ padding: 32 }} className="animate-fade-in">
+    <div className="page animate-fade-in">
       <Breadcrumb items={[
         { label: 'Overview', to: '/' },
         { label: teamLabel },
@@ -233,7 +232,7 @@ export default function TeamPage() {
                     <span style={{ fontSize: 9, fontWeight: 700, color: cat.color, background: cat.bg, borderRadius: 20, padding: '1px 8px', fontFamily: 'var(--font-mono)' }}>{cat.keys.length}×</span>
                   </div>
                   {/* KPI cards in a flex row */}
-                  <div style={{ display: 'flex', gap: 10 }}>
+                  <div className="responsive-flex-row" style={{ display: 'flex', gap: 10 }}>
                     {cat.keys.map(k => (
                       <KpiHeroCard
                         key={k}
@@ -269,7 +268,7 @@ export default function TeamPage() {
                 </Link>
               }
             />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div className="responsive-grid-2" style={{ gap: 14 }}>
               {DORA_KEYS.map(k => {
                 const v = valFromKpis(allKpis, k);
                 const level = doraLevel(k, v);
@@ -391,9 +390,9 @@ export default function TeamPage() {
           }
         />
         {wiLoading && <Loader />}
-        {wiData?.items && wiData.items.length > 0 && (
+        {allWiData?.items && allWiData.items.length > 0 && (
           <WorkItemsTable
-            items={wiData.items.slice(0, 6)}
+            items={allWiData.items.slice(0, 6)}
             onWorkItemClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)}
             onParentClick={(id) => navigate(`/teams/${teamId}/work-items/${id}`)}
             showParent

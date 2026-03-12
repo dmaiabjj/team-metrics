@@ -102,7 +102,6 @@ def compute_lead_time(
     cycle_times: list[float] = []
 
     for d in measured:
-        assert d.start_date is not None and d.finish_date is not None
         lt_days = (d.finish_date - d.start_date).total_seconds() / 86400
         lead_times.append(lt_days)
         if d.date_created is not None:

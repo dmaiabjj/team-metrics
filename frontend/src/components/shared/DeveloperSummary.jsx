@@ -211,7 +211,7 @@ export default function DeveloperSummary({ items, onWorkItemClick }) {
       </div>
 
       {/* Developer cards grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+      <div className="responsive-grid-2" style={{ gap: 14 }}>
         {devs.map(dev => <DeveloperCard key={dev.name} dev={dev} onWorkItemClick={onWorkItemClick} />)}
       </div>
     </div>

@@ -55,13 +55,6 @@ class InvalidDateRangeError(TeamMetricsError):
         super().__init__(detail, error_code="INVALID_DATE_RANGE")
 
 
-class ConfigurationError(TeamMetricsError):
-    """Raised when configuration is missing or invalid."""
-
-    def __init__(self, detail: str) -> None:
-        super().__init__(detail, error_code="CONFIGURATION_ERROR")
-
-
 class KPINotEnabledError(TeamMetricsError):
     """Raised when a requested KPI/metric is not enabled in config."""
 

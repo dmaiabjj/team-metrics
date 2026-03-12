@@ -91,7 +91,7 @@ export default function DoraHealthPage() {
   const allTeams = dashData?.teams || [];
 
   return (
-    <div className="page dora-page animate-fade-in" style={{ padding: 32, background: '#f8f9fb' }}>
+    <div className="page dora-page animate-fade-in" style={{ background: '#f8f9fb' }}>
 
       {/* Breadcrumb */}
       <div className="breadcrumb" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -110,7 +110,7 @@ export default function DoraHealthPage() {
 
         {/* ── TOP SUMMARY CARD ─────────────────────────────────────────────── */}
         {overall && (
-          <div style={{ ...levelCardStyle(overall.color), marginBottom: 24 }}>
+          <div className="responsive-flex-row" style={{ ...levelCardStyle(overall.color), marginBottom: 24 }}>
             <div style={{
               width: 100, height: 100, borderRadius: '50%', flexShrink: 0,
               background: `linear-gradient(135deg,${overall.color} 0%,${overall.color}dd 100%)`,
@@ -166,7 +166,7 @@ export default function DoraHealthPage() {
         )}
 
         {/* ── TWO METRIC CARDS ────────────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 32 }}>
+        <div className="responsive-grid-2" style={{ gap: 16, marginBottom: 32 }}>
           {DORA_KEYS.map(k => {
             const value = k === 'deploy_frequency' ? dfValue : ltValue;
             const kpi = k === 'deploy_frequency' ? dfKpi : ltKpi;
@@ -382,7 +382,7 @@ function CrossTeamBenchmark({ teams, currentTeamId, currentDfValue, currentLtVal
         <span style={{ fontSize: 14, fontWeight: 800 }}>Cross-Team Benchmark</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>all teams this period</span>
       </div>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+      <div className="tbl-scroll-wrap" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
         <table className="tbl">
           <thead>
             <tr>

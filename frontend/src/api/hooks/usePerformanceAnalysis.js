@@ -15,55 +15,53 @@ function lastDayOfMonth(year, month) {
 
 // ─── PERIOD COMPARISON: compute current vs previous ───────────────────────────
 
-export function computePeriods(interval, customCurrent, customPrevious) {
+/**
+ * Computes { current, previous } date ranges.
+ *
+ * `currentStart` / `currentEnd` are the global period-picker dates (from PeriodContext).
+ * The `interval` selector only controls the *previous* comparison window so that
+ * the "current" values always match what TeamPage and other pages show for the
+ * same global date range.
+ */
+export function computePeriods(interval, customCurrent, customPrevious, currentStart, currentEnd) {
   const today = new Date();
+  const current = { start: currentStart || toISO(today), end: currentEnd || toISO(today) };
 
   if (interval === 'custom') {
     return {
-      current: customCurrent || { start: toISO(today), end: toISO(today) },
-      previous: customPrevious || { start: toISO(today), end: toISO(today) },
+      current: customCurrent || current,
+      previous: customPrevious || current,
     };
   }
 
+  const anchor = new Date(current.start);
+
   if (interval === 'weekly') {
-    const day = today.getDay(); // 0=Sun
-    const diffToMon = day === 0 ? 6 : day - 1;
-    const curStart = new Date(today);
-    curStart.setDate(today.getDate() - diffToMon);
-    const prevEnd = new Date(curStart);
+    // Previous = 7-day window ending the day before current start
+    const prevEnd = new Date(anchor);
     prevEnd.setDate(prevEnd.getDate() - 1);
     const prevStart = new Date(prevEnd);
     prevStart.setDate(prevStart.getDate() - 6);
-    return {
-      current: { start: toISO(curStart), end: toISO(today) },
-      previous: { start: toISO(prevStart), end: toISO(prevEnd) },
-    };
+    return { current, previous: { start: toISO(prevStart), end: toISO(prevEnd) } };
   }
 
   if (interval === 'monthly') {
-    const curStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const prevEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+    // Previous = full calendar month before the month containing current start
+    const prevEnd = new Date(anchor.getFullYear(), anchor.getMonth(), 0);
     const prevStart = new Date(prevEnd.getFullYear(), prevEnd.getMonth(), 1);
-    return {
-      current: { start: toISO(curStart), end: toISO(today) },
-      previous: { start: toISO(prevStart), end: toISO(prevEnd) },
-    };
+    return { current, previous: { start: toISO(prevStart), end: toISO(prevEnd) } };
   }
 
   if (interval === 'quarterly') {
-    const curQ = Math.floor(today.getMonth() / 3);
-    const curStart = new Date(today.getFullYear(), curQ * 3, 1);
-    const prevQEnd = new Date(curStart);
-    prevQEnd.setDate(prevQEnd.getDate() - 1);
+    // Previous = full quarter before the quarter containing current start
+    const curQ = Math.floor(anchor.getMonth() / 3);
+    const prevQEnd = new Date(anchor.getFullYear(), curQ * 3, 0);
     const prevQ = Math.floor(prevQEnd.getMonth() / 3);
     const prevStart = new Date(prevQEnd.getFullYear(), prevQ * 3, 1);
-    return {
-      current: { start: toISO(curStart), end: toISO(today) },
-      previous: { start: toISO(prevStart), end: toISO(prevQEnd) },
-    };
+    return { current, previous: { start: toISO(prevStart), end: toISO(prevQEnd) } };
   }
 
-  return { current: { start: toISO(today), end: toISO(today) }, previous: { start: toISO(today), end: toISO(today) } };
+  return { current, previous: current };
 }
 
 // ─── MERGE two dashboard responses into comparison data ───────────────────────
@@ -105,8 +103,8 @@ function mergePeriods(currentData, previousData) {
 
 // ─── usePerformanceComparison hook ────────────────────────────────────────────
 
-export function usePerformanceComparison(interval, customCurrent, customPrevious) {
-  const { current, previous } = computePeriods(interval, customCurrent, customPrevious);
+export function usePerformanceComparison(interval, customCurrent, customPrevious, periodStart, periodEnd) {
+  const { current, previous } = computePeriods(interval, customCurrent, customPrevious, periodStart, periodEnd);
 
   const queries = useQueries({
     queries: [

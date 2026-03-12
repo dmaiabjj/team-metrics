@@ -18,7 +18,7 @@ export default function DoraBarChart({ teams, values, kpiKey }) {
   });
 
   return (
-    <div className="w-full">
+    <div className="w-full" role="img" aria-label={`${meta.label} DORA bar chart`}>
       <ResponsiveContainer width="100%" height={teams.length * 44 + 20}>
         <BarChart data={data} layout="vertical" margin={{ top: 4, right: 60, left: 0, bottom: 4 }}>
           <XAxis type="number" hide />
